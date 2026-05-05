@@ -166,12 +166,65 @@
     <span style="font-size:11px;opacity:.7">gold</span>
   </div>
   <nav>
-    <button class="active" onclick="showPage('inventory')">Inventory</button>
-    <button onclick="showPage('equipment')">Equipment</button>
-    <button onclick="showPage('checker')">Checker</button>
-    <button onclick="showPage('convert')">Surplus</button>
+    <button class="active" onclick="showPage('inventory')">📦 Inventory</button>
+    <button onclick="showPage('equipment')">⚙ Equipment</button>
+    <button onclick="showPage('checker')">🔍 Checker</button>
+    <button onclick="showPage('convert')">♻ Surplus</button>
+    <button onclick="showHelp()" title="Help">?</button>
   </nav>
 </header>
+
+<!-- ── Help Modal ── -->
+<div id="help-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;overflow-y:auto;padding:30px 16px" onclick="if(event.target===this)closeHelp()">
+  <div style="max-width:620px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h2 style="font-size:17px;color:var(--accent)">⚔ VR Forge — Quick Guide</h2>
+      <button onclick="closeHelp()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px;font-size:13px;line-height:1.7">
+
+      <div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:4px">📦 Inventory</div>
+        <div style="color:var(--muted)">Enter how many of each material you currently own. Use the +/− buttons or type directly. Materials are tracked per grade (White → Gold).</div>
+        <div style="margin-top:6px;color:var(--muted)">
+          <strong style="color:var(--text)">⚡ Smart Convert</strong> — pick a material and target grade to see the maximum you can reach using your current stock (fuse first, then dismantle). Enter a desired amount and click <em>Convert</em> to apply the changes automatically.<br>
+          <strong style="color:var(--text)">↑ Fuse</strong> — manually combine 4 of a lower grade into 1 higher grade.<br>
+          <strong style="color:var(--text)">↓ Dismantle</strong> — manually break 1 higher grade into 4 lower, at a gold cost.
+        </div>
+      </div>
+
+      <div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:4px">⚙ Equipment</div>
+        <div style="color:var(--muted)">Browse all equipment. For each item you can:</div>
+        <ul style="color:var(--muted);padding-left:18px;margin-top:4px">
+          <li>Click a grade badge (White / Green / …) to mark it as <strong style="color:var(--text)">crafted</strong> — this is required by the Checker as a prerequisite for higher grades.</li>
+          <li>Click <strong style="color:var(--text)">Skip</strong> to exclude it from surplus calculations — useful for equipment you don't plan to make.</li>
+          <li>Click <strong style="color:var(--text)">Check</strong> to jump straight to the Checker for that item.</li>
+        </ul>
+      </div>
+
+      <div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:4px">🔍 Checker</div>
+        <div style="color:var(--muted)">Select an equipment and a target grade to see if you can forge it:</div>
+        <ul style="color:var(--muted);padding-left:18px;margin-top:4px">
+          <li><strong style="color:var(--text)">Prerequisite</strong> — forging any grade above White requires the previous grade to already be crafted. The checker will tell you if the chain is clearable using your current materials.</li>
+          <li><strong style="color:var(--text)">Material table</strong> — shows each required material, how many you have, and whether you can meet the need directly, via fusing lower grades, or by dismantling higher ones (with gold cost).</li>
+          <li>When intermediate forge steps are simulated, quantities are shown <em>after</em> those steps so nothing is double-counted.</li>
+        </ul>
+      </div>
+
+      <div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:4px">♻ Surplus</div>
+        <div style="color:var(--muted)">Shows materials you have more of than your active equipment needs, plus materials freed up from equipment you've marked as Skipped. These are safe to fuse or convert without affecting your crafting goals.</div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:12px;color:var(--muted);font-size:12px">
+        💾 All data is saved automatically in your browser's local storage. Use <strong style="color:var(--text)">Export / Import</strong> on the Inventory page to back up or transfer your data.
+      </div>
+    </div>
+  </div>
+</div>
 
 <main>
 
@@ -335,6 +388,10 @@
 
 </main>
 
+<footer style="text-align:center;padding:16px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);margin-top:20px">
+  Built with <a href="https://claude.ai/code" target="_blank" style="color:var(--accent2);text-decoration:none">Claude Code</a> · Not affiliated with Viking Rise or its developers
+</footer>
+
 <script>
 // ══════════════════════════════════════════════════════════════
 //  GAME DATA
@@ -433,6 +490,8 @@ function syncGoldUI(){ document.getElementById('gold-input').value=state.gold||'
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════════
 const PAGES = ['inventory','equipment','checker','convert'];
+function showHelp(){ document.getElementById('help-modal').style.display='block'; document.body.style.overflow='hidden'; }
+function closeHelp(){ document.getElementById('help-modal').style.display='none'; document.body.style.overflow=''; }
 function showPage(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
