@@ -1357,53 +1357,77 @@ function renderConvert(){
 
   const hasRequirements = Object.keys(required).length > 0;
 
-  // ── Requirements table ──
-  let shortageCount = 0, exactCount = 0, reqSurplusCount = 0, reqRows = '';
-  if(hasRequirements){
-    const entries = Object.entries(required).map(([k, need]) => {
-      const [matId, grade] = k.split('_');
-      const have = state.inventory[k] || 0;
-      return { matId, grade, need, have, diff: have - need };
-    }).sort((a, b) => a.diff - b.diff);
+  // ── Single simulation pass: analyze + consume requirements, collect free remainder.
+  // Processing matId × grade (low→high) so fusing from below is preferred.
+  const workInv = Object.assign({}, state.inventory);
+  let shortageCount = 0, okCount = 0, reqGold = 0, reqRows = '';
 
-    reqRows = entries.map(({ matId, grade, need, have, diff }) => {
-      const mat = MATERIALS[matId];
-      if(!mat) return '';
-      if(diff < 0) shortageCount++;
-      else if(diff > 0) reqSurplusCount++;
-      else exactCount++;
-      const pill = diff < 0
-        ? `<span class="pill pill-lack">${diff} short</span>`
-        : diff > 0
-          ? `<span class="pill pill-ok">+${diff} surplus</span>`
-          : `<span class="pill pill-ok">✓ Exact</span>`;
-      return `<tr>
-        <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
-        <td><span class="gb gb-${grade}">${grade}</span></td>
-        <td style="text-align:right">${need}</td>
-        <td style="text-align:right">${have}</td>
-        <td>${pill}</td>
-      </tr>`;
-    }).join('');
+  if(hasRequirements){
+    for(const matId of MAT_IDS){
+      for(const grade of GRADES){
+        const need = required[invKey(matId, grade)] || 0;
+        if(need <= 0) continue;
+        const mat = MATERIALS[matId];
+        const a = analyzeMatNeedFromInv(workInv, matId, grade, need);
+        consumeMatFromInv(workInv, matId, grade, need);
+        reqGold += a.totalGold;
+
+        let pill, notes = [];
+        if(a.canMeet){
+          okCount++;
+          if(a.dismantleSteps.length === 0 && a.fuseGain === 0){
+            const surplus = a.direct - need;
+            pill = surplus > 0
+              ? `<span class="pill pill-ok">+${surplus} surplus</span>`
+              : `<span class="pill pill-ok">✓ Direct</span>`;
+          } else if(a.dismantleSteps.length === 0){
+            pill = `<span class="pill pill-ok-fuse">✓ Fuse</span>`;
+            notes.push(`<span class="fuse-txt">Fuse lower grades → +${a.fuseGain}</span>`);
+          } else {
+            pill = `<span class="pill pill-ok-dis">✓ Dismantle</span>`;
+            if(a.fuseGain > 0) notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
+            a.dismantleSteps.forEach(s =>
+              notes.push(`<span class="dis-txt">Dismantle ${s.use}× ${s.grade} → +${s.gained}</span> <span class="gold-txt">(${s.cost.toLocaleString()} 💰)</span>`)
+            );
+          }
+        } else {
+          shortageCount++;
+          pill = `<span class="pill pill-lack">✗ −${a.stillMissing} short</span>`;
+          if(a.fuseGain > 0) notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
+          a.dismantleSteps.forEach(s =>
+            notes.push(`<span class="dis-txt">Dismantle ${s.use}× ${s.grade} → +${s.gained}</span> <span class="gold-txt">(${s.cost.toLocaleString()} 💰)</span>`)
+          );
+          notes.push(`<span class="miss-txt">Still missing: ${a.stillMissing}</span>`);
+        }
+
+        const noteHtml = notes.length ? `<span class="action-note">${notes.join('<br>')}</span>` : '';
+        reqRows += `<tr>
+          <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
+          <td><span class="gb gb-${grade}">${grade}</span></td>
+          <td style="text-align:right">${need}</td>
+          <td style="text-align:right">${a.direct}</td>
+          <td>${pill}${noteHtml}</td>
+        </tr>`;
+      }
+    }
   }
 
-  // ── Free materials: in inventory but not needed by any target ──
+  // workInv now holds whatever genuinely remains after all requirements are satisfied.
   let freeRows = '', freeCount = 0;
   for(const matId of MAT_IDS){
-    for(const grade of GRADES){
-      const k = invKey(matId, grade);
-      const have = state.inventory[k] || 0;
-      if(have <= 0 || required[k] > 0) continue; // skip empty or already in requirements
-      const mat = MATERIALS[matId];
-      freeCount++;
-      freeRows += `<tr>
-        <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
-        <td><span class="gb gb-${grade}">${grade}</span></td>
-        <td style="text-align:right;color:var(--muted)">—</td>
-        <td style="text-align:right">${have}</td>
-        <td><span class="pill pill-ok-fuse">Free</span></td>
-      </tr>`;
-    }
+    const mat = MATERIALS[matId];
+    const hasAny = GRADES.some(g => (workInv[invKey(matId, g)] || 0) > 0);
+    if(!hasAny) continue;
+    freeCount++;
+    const cells = GRADES.map(grade => {
+      const qty = workInv[invKey(matId, grade)] || 0;
+      if(qty <= 0) return `<td style="text-align:center;color:var(--muted)">—</td>`;
+      return `<td style="text-align:center;font-weight:700;color:var(--green-c)">${qty}</td>`;
+    });
+    freeRows += `<tr>
+      <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
+      ${cells.join('')}
+    </tr>`;
   }
 
   container.innerHTML = `
@@ -1419,9 +1443,9 @@ function renderConvert(){
     </div>
     ${hasRequirements ? `
       <div class="summary-bar" style="margin-bottom:14px">
-        ${shortageCount   ? `<div class="sum-chip lack"><strong>${shortageCount}</strong>Shortage</div>`   : ''}
-        ${exactCount      ? `<div class="sum-chip ok"  ><strong>${exactCount}</strong>Exact</div>`         : ''}
-        ${reqSurplusCount ? `<div class="sum-chip ok"  ><strong>${reqSurplusCount}</strong>Surplus</div>`  : ''}
+        ${okCount       ? `<div class="sum-chip ok"  ><strong>${okCount}</strong>Can Meet</div>`      : ''}
+        ${shortageCount ? `<div class="sum-chip lack"><strong>${shortageCount}</strong>Shortage</div>` : ''}
+        ${reqGold       ? `<div class="sum-chip" style="border-color:var(--gold-c)"><strong style="color:var(--gold-c)">${reqGold.toLocaleString()} 💰</strong>Gold needed</div>` : ''}
       </div>
       <div class="card" style="margin-bottom:16px">
         <div class="card-label" style="margin-bottom:10px">Material Requirements</div>
@@ -1440,16 +1464,14 @@ function renderConvert(){
       : ''
     }
     ${freeCount ? `
-      <div class="card">
-        <div class="card-label" style="margin-bottom:6px">Free Materials
+      <div class="card" style="overflow-x:auto">
+        <div class="card-label" style="margin-bottom:10px">Free Materials
           <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px">not needed for any target — safe to fuse or convert</span>
         </div>
         <table class="mat-table">
           <thead><tr>
-            <th>Material</th><th>Grade</th>
-            <th style="text-align:right">Required</th>
-            <th style="text-align:right">In Stock</th>
-            <th>Status</th>
+            <th>Material</th>
+            ${GRADES.map(g=>`<th style="text-align:center"><span class="gb gb-${g}">${g}</span></th>`).join('')}
           </tr></thead>
           <tbody>${freeRows}</tbody>
         </table>
