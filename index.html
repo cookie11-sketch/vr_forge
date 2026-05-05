@@ -112,6 +112,9 @@
   .skip-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:3px 9px;border-radius:5px;cursor:pointer;font-size:12px;white-space:nowrap;transition:all .15s}
   .skip-btn:hover{background:var(--red);border-color:var(--red);color:#fff}
   .skip-btn.on{background:var(--red);border-color:var(--red);color:#fff}
+  .grade-toggle{cursor:pointer;transition:all .15s;user-select:none;opacity:.45}
+  .grade-toggle:hover{opacity:.8}
+  .grade-toggle.crafted{opacity:1;box-shadow:0 0 0 1px currentColor}
 
   /* ── Checker page ── */
   .ck-controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end}
@@ -193,6 +196,32 @@
       <h2>⚗ Fusion Workshop</h2>
     </div>
     <div class="workshop-grid">
+      <!-- Smart Convert (full width) -->
+      <div class="ws-card" style="grid-column:1/-1">
+        <h3>⚡ Smart Convert  <small style="color:var(--muted);font-weight:400">fuse + dismantle combined — prioritises fuse first</small></h3>
+        <div class="ws-row">
+          <label>Material</label>
+          <select id="cv-mat" onchange="updateConvert()">
+            <option value="">— pick material —</option>
+          </select>
+          <label style="margin-left:8px">Target grade</label>
+          <select id="cv-grade" onchange="updateConvert()">
+            <option value="">— pick grade —</option>
+            <option>White</option><option>Green</option><option>Blue</option>
+            <option>Purple</option><option>Gold</option>
+          </select>
+        </div>
+        <div id="cv-info" class="ws-info" style="display:none"></div>
+        <div class="ws-row" id="cv-amount-row" style="display:none">
+          <label>Desired amount</label>
+          <input type="number" id="cv-qty" min="1" value="1"
+            style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px;width:90px"
+            oninput="updateConvertPreview()" />
+          <button class="btn btn-sm" onclick="doConvert()">Convert</button>
+        </div>
+        <div id="cv-preview" class="ws-info" style="display:none;margin-top:0"></div>
+      </div>
+
       <!-- Fuse -->
       <div class="ws-card">
         <h3>↑ Fuse  <small style="color:var(--muted);font-weight:400">(4 lower → 1 higher)</small></h3>
@@ -373,16 +402,18 @@ const EQUIPMENT_DB = [
 // ══════════════════════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════════════════════
-let state = { inventory:{}, skipped:{}, gold:0 };
+let state = { inventory:{}, skipped:{}, crafted:{}, gold:0 };
 
 function invKey(matId, grade){ return matId+'_'+grade; }
+function craftedKey(eqId, grade){ return eqId+'_'+grade; }
 
 function loadState(){
   try{ const r=localStorage.getItem('vrforge_v2'); if(r) state=JSON.parse(r); }catch{}
   for(const mat of MAT_IDS)
     for(const g of GRADES)
       if(state.inventory[invKey(mat,g)]==null) state.inventory[invKey(mat,g)]=0;
-  if(!state.gold) state.gold=0;
+  if(!state.gold)    state.gold=0;
+  if(!state.crafted) state.crafted={};
 }
 function saveState(){ localStorage.setItem('vrforge_v2',JSON.stringify(state)); }
 
@@ -477,7 +508,7 @@ function importData(){
 
 // ── Workshop: Fuse ──
 function populateWorkshopSelects(){
-  ['fuse-mat','dis-mat'].forEach(id=>{
+  ['fuse-mat','dis-mat','cv-mat'].forEach(id=>{
     const sel=document.getElementById(id);
     sel.innerHTML='<option value="">— pick material —</option>'+
       MAT_IDS.map(m=>`<option value="${m}">${MATERIALS[m].name}</option>`).join('');
@@ -570,6 +601,190 @@ function doDismantle(){
   saveState(); renderInventory(); syncGoldUI(); updateDisInfo();
 }
 
+// ── Workshop: Smart Convert ──────────────────────────────────
+
+// Recursively fuse lower grades to produce `additionalNeeded` more of work[tIdx].
+// Modifies work[] in place. Returns how many were actually produced.
+function planMinFuse(work, tIdx, additionalNeeded){
+  if(additionalNeeded<=0 || tIdx<=0) return 0;
+  const srcIdx=tIdx-1;
+  const srcNeeded=additionalNeeded*FUSE_RATE;
+  // produce more at srcIdx from below if short
+  if(work[srcIdx]<srcNeeded)
+    planMinFuse(work, srcIdx, srcNeeded-work[srcIdx]);
+  const toUse=Math.floor(Math.min(work[srcIdx],srcNeeded)/FUSE_RATE)*FUSE_RATE;
+  const produced=toUse/FUSE_RATE;
+  work[srcIdx]-=toUse;
+  work[tIdx]+=produced;
+  return produced;
+}
+
+// Full plan for converting to `desired` of targetGrade.
+// Pass desired=undefined to get just the max info.
+function computeConversionPlan(matId, targetGrade, desired){
+  const tIdx=GRADES.indexOf(targetGrade);
+  const original=GRADES.map(g=>getQty(matId,g));
+  const direct=original[tIdx];
+
+  // Max from greedy fuse cascade
+  const fuseWork=[...original];
+  for(let i=0;i<tIdx;i++){
+    const gain=Math.floor(fuseWork[i]/FUSE_RATE);
+    fuseWork[i+1]+=gain; fuseWork[i]%=FUSE_RATE;
+  }
+  const maxFromFuse=fuseWork[tIdx]; // includes original direct
+
+  // Max from dismantling everything above (on top of maxFromFuse)
+  let maxTotal=maxFromFuse;
+  const dismantleMaxSteps=[];
+  for(let h=tIdx+1;h<GRADES.length;h++){
+    const avail=original[h];
+    if(avail>0){
+      const unitsPerH=Math.pow(FUSE_RATE,h-tIdx);
+      const gained=avail*unitsPerH;
+      const cost=avail*dismantleCostPerUnit(h,tIdx);
+      maxTotal+=gained;
+      dismantleMaxSteps.push({grade:GRADES[h],avail,gained,cost});
+    }
+  }
+  const totalMaxGold=dismantleMaxSteps.reduce((s,d)=>s+d.cost,0);
+
+  if(desired===undefined)
+    return{direct,maxFromFuse,maxTotal,dismantleMaxSteps,totalMaxGold};
+
+  // Build exact plan for desired amount
+  const work=[...original];
+  const ops=[];
+  let totalGold=0;
+  let stillNeed=Math.max(0,desired-direct);
+
+  // Phase 1: fuse minimum from lower grades
+  if(stillNeed>0){
+    const canFromFuse=maxFromFuse-direct;
+    const fuseTarget=Math.min(stillNeed,canFromFuse);
+    if(fuseTarget>0){
+      const produced=planMinFuse(work,tIdx,fuseTarget);
+      if(produced>0){ ops.push({type:'fuse',produced}); stillNeed-=produced; }
+    }
+  }
+
+  // Phase 2: dismantle minimum from higher grades (closest grade first = cheapest)
+  if(stillNeed>0){
+    for(let h=tIdx+1;h<GRADES.length&&stillNeed>0;h++){
+      const avail=work[h]; // fuse only touched ≤ tIdx, so this is still original
+      if(avail<=0) continue;
+      const unitsPerH=Math.pow(FUSE_RATE,h-tIdx);
+      const goldPerH=dismantleCostPerUnit(h,tIdx);
+      const needed=Math.ceil(stillNeed/unitsPerH);
+      const use=Math.min(avail,needed);
+      const gained=use*unitsPerH;
+      const cost=use*goldPerH;
+      ops.push({type:'dismantle',grade:GRADES[h],use,gained,cost});
+      work[h]-=use; work[tIdx]+=gained;
+      totalGold+=cost; stillNeed-=gained;
+    }
+  }
+
+  const achievable=desired-Math.max(0,stillNeed);
+  const deltas=GRADES.map((_,i)=>work[i]-original[i]);
+  return{ops,totalGold,achievable,deltas};
+}
+
+function updateConvert(){
+  const matId=document.getElementById('cv-mat').value;
+  const grade=document.getElementById('cv-grade').value;
+  const info=document.getElementById('cv-info');
+  const amtRow=document.getElementById('cv-amount-row');
+  const preview=document.getElementById('cv-preview');
+  preview.style.display='none';
+  if(!matId||!grade){info.style.display='none';amtRow.style.display='none';return;}
+
+  const p=computeConversionPlan(matId,grade);
+  const canAffordAll=state.gold>=p.totalMaxGold;
+  const fuseExtra=p.maxFromFuse-p.direct;
+  const disExtra=p.maxTotal-p.maxFromFuse;
+
+  info.style.display='block';
+  info.innerHTML=`
+    <div><span class="label">Have (direct): </span><span class="val">${p.direct} ${grade}</span></div>
+    <div><span class="label">Max after fuse: </span><span class="val ${fuseExtra>0?'ok':''}">${p.maxFromFuse} ${fuseExtra>0?`<span style="color:var(--muted);font-size:11px">(+${fuseExtra} from lower grades)</span>`:''}</span></div>
+    <div><span class="label">Max with dismantle: </span><span class="val ${disExtra>0?'warn':''}">${p.maxTotal} ${disExtra>0?`<span style="color:var(--muted);font-size:11px">(+${disExtra} from higher grades)</span>`:''}</span></div>
+    ${p.totalMaxGold>0?`<div><span class="label">Gold to unlock max: </span><span class="val ${canAffordAll?'ok':'err'}">${p.totalMaxGold.toLocaleString()} 💰${canAffordAll?' ✓':' ✗ not enough'}</span></div>`:''}
+  `;
+
+  const maxInput=document.getElementById('cv-qty');
+  const prev=parseInt(maxInput.value)||1;
+  maxInput.max=p.maxTotal;
+  maxInput.value=Math.min(prev,p.maxTotal)||1;
+  amtRow.style.display=p.maxTotal>p.direct?'flex':'none';
+  if(p.maxTotal>p.direct) updateConvertPreview();
+}
+
+function updateConvertPreview(){
+  const matId=document.getElementById('cv-mat').value;
+  const grade=document.getElementById('cv-grade').value;
+  const desired=Math.max(1,parseInt(document.getElementById('cv-qty').value)||1);
+  const preview=document.getElementById('cv-preview');
+  if(!matId||!grade){preview.style.display='none';return;}
+
+  const direct=getQty(matId,grade);
+  if(desired<=direct){
+    preview.style.display='block';
+    preview.innerHTML=`<span class="ok">Already have ${direct} — no conversion needed.</span>`;
+    return;
+  }
+
+  const plan=computeConversionPlan(matId,grade,desired);
+  const canAfford=state.gold>=plan.totalGold;
+
+  const opsHtml=plan.ops.map(op=>{
+    if(op.type==='fuse')
+      return `<div><span class="fuse-txt">↑ Fuse lower grades → +${op.produced} ${grade}</span></div>`;
+    return `<div><span class="dis-txt">↓ Dismantle ${op.use}× ${op.grade} → +${op.gained} ${grade}</span>`
+          +`<span class="gold-txt" style="margin-left:6px">${op.cost.toLocaleString()} 💰</span></div>`;
+  }).join('');
+
+  const deltaHtml=plan.deltas.map((d,i)=>{
+    if(d===0) return '';
+    return `<span style="margin-right:12px;color:${d>0?'var(--green-c)':'var(--red)'}">${GRADES[i]}: ${d>0?'+':''}${d}</span>`;
+  }).join('');
+
+  preview.style.display='block';
+  preview.innerHTML=`
+    <div style="margin-bottom:5px"><span class="label">Operations:</span></div>
+    ${opsHtml}
+    <div style="margin-top:8px;margin-bottom:4px"><span class="label">Inventory changes:</span></div>
+    <div>${deltaHtml}</div>
+    ${plan.totalGold>0?`<div style="margin-top:6px"><span class="label">Gold cost: </span>
+      <span class="gold-txt" style="font-weight:700">${plan.totalGold.toLocaleString()} 💰</span>
+      <span style="margin-left:8px;color:${canAfford?'var(--green-c)':'var(--red)'}">${canAfford?'✓ can afford':'✗ need '+(plan.totalGold-state.gold).toLocaleString()+' more'}</span>
+    </div>`:''}
+    ${plan.achievable<desired?`<div style="margin-top:5px"><span class="err">⚠ Can only produce ${plan.achievable}, not ${desired}</span></div>`:''}
+  `;
+}
+
+function doConvert(){
+  const matId=document.getElementById('cv-mat').value;
+  const grade=document.getElementById('cv-grade').value;
+  const desired=Math.max(1,parseInt(document.getElementById('cv-qty').value)||1);
+  if(!matId||!grade){alert('Select material and grade.');return;}
+
+  const plan=computeConversionPlan(matId,grade,desired);
+  if(plan.achievable===0){alert('Nothing to convert — no lower or higher grade materials available.');return;}
+  if(plan.totalGold>state.gold){
+    alert(`Not enough gold.\nNeed: ${plan.totalGold.toLocaleString()}\nHave: ${state.gold.toLocaleString()}`);
+    return;
+  }
+
+  GRADES.forEach((g,i)=>{
+    if(plan.deltas[i]!==0)
+      state.inventory[invKey(matId,g)]=Math.max(0,getQty(matId,g)+plan.deltas[i]);
+  });
+  state.gold-=plan.totalGold;
+
+  saveState(); renderInventory(); syncGoldUI(); updateConvert();
+}
+
 // ══════════════════════════════════════════════════════════════
 //  EQUIPMENT PAGE
 // ══════════════════════════════════════════════════════════════
@@ -602,7 +817,12 @@ function renderEquipment(){
       <div class="eq-name">${eq.name}<small>${eq.slot}</small></div>
       <span class="type-badge type-${eq.type}">${eq.type}</span>
       ${isTodo?'<span class="tag todo-tag">TODO</span>':''}
-      ${GRADES.map(g=>`<span class="gb gb-${g}">${g}</span>`).join('')}
+      ${GRADES.map(g=>{
+        const c=!!state.crafted[craftedKey(eq.id,g)];
+        return `<span class="gb gb-${g} grade-toggle ${c?'crafted':''}"
+          onclick="toggleCrafted('${eq.id}','${g}',event)"
+          title="${c?'Crafted — click to unmark':'Not crafted — click to mark as crafted'}">${c?'✓ ':''}${g}</span>`;
+      }).join('')}
       <button class="skip-btn ${sk?'on':''}" onclick="toggleSkip('${eq.id}',event)">${sk?'✗ Skipped':'Skip'}</button>
       ${!isTodo?`<button class="btn btn-ghost btn-sm" onclick="openChecker('${eq.id}')">Check</button>`:''}
     </div>`;
@@ -613,6 +833,13 @@ function toggleSkip(id,e){
   e.stopPropagation();
   state.skipped[id]=!state.skipped[id];
   if(!state.skipped[id]) delete state.skipped[id];
+  saveState(); renderEquipment();
+}
+function toggleCrafted(eqId,grade,e){
+  if(e) e.stopPropagation();
+  const k=craftedKey(eqId,grade);
+  state.crafted[k]=!state.crafted[k];
+  if(!state.crafted[k]) delete state.crafted[k];
   saveState(); renderEquipment();
 }
 function openChecker(id){ showPage('checker'); document.getElementById('ck-eq').value=id; renderChecker(); }
@@ -683,6 +910,119 @@ function analyzeMatNeed(matId, targetGrade, need){
   };
 }
 
+// analyzeMatNeed variant that reads from an explicit inventory object instead of state.
+// Returns the same shape as analyzeMatNeed (including dismantleSteps array).
+function analyzeMatNeedFromInv(inv, matId, targetGrade, need){
+  const tIdx = GRADES.indexOf(targetGrade);
+  let counts = GRADES.map(g => inv[invKey(matId,g)] || 0);
+  for(let i=0; i<tIdx; i++){
+    const gain = Math.floor(counts[i] / FUSE_RATE);
+    counts[i+1] += gain; counts[i] %= FUSE_RATE;
+  }
+  const direct = inv[invKey(matId,targetGrade)] || 0;
+  const afterFusion = counts[tIdx];
+  let remaining = Math.max(0, need - afterFusion);
+  const dismantleSteps = [];
+  let totalGold = 0;
+  for(let h=tIdx+1; h<GRADES.length && remaining>0; h++){
+    const avail = inv[invKey(matId,GRADES[h])] || 0;
+    if(avail<=0) continue;
+    const unitsPerH = Math.pow(FUSE_RATE, h-tIdx);
+    const goldPerH  = dismantleCostPerUnit(h, tIdx);
+    const needed    = Math.ceil(remaining / unitsPerH);
+    const use       = Math.min(avail, needed);
+    const gained    = use * unitsPerH;
+    const cost      = use * goldPerH;
+    totalGold  += cost;
+    remaining  -= gained;
+    dismantleSteps.push({ grade: GRADES[h], use, gained, cost });
+  }
+  return { direct, afterFusion, fuseGain: afterFusion - direct,
+           dismantleSteps, totalGold,
+           stillMissing: Math.max(0, remaining), canMeet: remaining <= 0 };
+}
+
+// Simulate consuming `need` units of matId at targetGrade from workInv (modifies in place).
+// Uses fuse-from-below first, then dismantle-from-above, matching analyzeMatNeed priority.
+function consumeMatFromInv(workInv, matId, targetGrade, need){
+  const tIdx = GRADES.indexOf(targetGrade);
+  const work = GRADES.map(g => workInv[invKey(matId,g)] || 0);
+
+  // Top up via fusing from below
+  planMinFuse(work, tIdx, Math.max(0, need - work[tIdx]));
+
+  // Top up via dismantling from above if still short
+  let toGet = Math.max(0, need - work[tIdx]);
+  for(let h=tIdx+1; h<GRADES.length && toGet>0; h++){
+    if(work[h]<=0) continue;
+    const unitsPerH = Math.pow(FUSE_RATE, h-tIdx);
+    const use = Math.min(work[h], Math.ceil(toGet/unitsPerH));
+    work[h] -= use;
+    work[tIdx] += use * unitsPerH;
+    toGet -= use * unitsPerH;
+  }
+
+  // Consume `need` from the target grade
+  work[tIdx] = Math.max(0, work[tIdx] - need);
+  GRADES.forEach((g,i) => workInv[invKey(matId,g)] = work[i]);
+}
+
+// Check prerequisite chain for forging targetGrade of eq.
+// Simulates sequential forging with a working inventory copy so that materials
+// consumed in one intermediate step are not double-counted in the next.
+// Returns: { met, type:'none'|'direct'|'chain'|'impossible',
+//            ownedGrade, prevGrade, chain:[{grade, matsOk}] }
+function checkPrereqChain(eq, targetGrade){
+  const tIdx = GRADES.indexOf(targetGrade);
+  if(tIdx === 0) return { met:true, type:'none' };
+
+  const prevGrade = GRADES[tIdx - 1];
+
+  // Direct: already own the immediate previous grade
+  if(state.crafted[craftedKey(eq.id, prevGrade)])
+    return { met:true, type:'direct', prevGrade, chain:[] };
+
+  // Find highest owned grade below target
+  let ownedIdx = -1;
+  for(let i=tIdx-2; i>=0; i--){
+    if(state.crafted[craftedKey(eq.id, GRADES[i])]){ ownedIdx = i; break; }
+  }
+
+  if(ownedIdx < 0)
+    return { met:false, type:'impossible', prevGrade, ownedGrade:null, chain:[] };
+
+  // Deep-copy the inventory so we can simulate consumption step by step
+  const workInv = Object.assign({}, state.inventory);
+
+  const chain = [];
+  let canChain = true;
+
+  for(let i=ownedIdx+1; i<tIdx; i++){
+    const g = GRADES[i];
+
+    // Check every material against the CURRENT working inventory
+    const matsOk = Object.entries(eq.recipe)
+      .every(([matId, need]) => analyzeMatNeedFromInv(workInv, matId, g, need).canMeet);
+
+    chain.push({ grade:g, matsOk });
+
+    if(!matsOk){ canChain = false; break; } // no point continuing
+
+    // Consume this step's materials so subsequent steps see a depleted inventory
+    for(const [matId, need] of Object.entries(eq.recipe))
+      consumeMatFromInv(workInv, matId, g, need);
+  }
+
+  return {
+    met: canChain,
+    type: canChain ? 'chain' : 'impossible',
+    ownedGrade: GRADES[ownedIdx],
+    prevGrade,
+    chain,
+    workInv,  // depleted after simulating all intermediate forge steps
+  };
+}
+
 function renderChecker(){
   const eqId  = document.getElementById('ck-eq').value;
   const grade = document.getElementById('ck-grade').value;
@@ -698,49 +1038,52 @@ function renderChecker(){
     return;
   }
 
-  let okCount=0, fuseCount=0, disCount=0, lackCount=0;
-  let grandGold=0;
+  const tIdx      = GRADES.indexOf(grade);
+  const prevGrade = tIdx > 0 ? GRADES[tIdx-1] : null;
+  const prereq    = checkPrereqChain(eq, grade);
+  const hasPrevGrade = prereq.met;
+
+  let okCount=0, fuseCount=0, disCount=0, lackCount=0, grandGold=0;
+
+  // If intermediate forge steps were simulated, use the depleted inventory so
+  // materials consumed by those steps aren't double-counted for the target grade.
+  const checkInv = (prereq.type === 'chain' && prereq.workInv) ? prereq.workInv : state.inventory;
+  const usingDepletedInv = checkInv !== state.inventory;
 
   const analyses = Object.entries(eq.recipe).map(([matId,need])=>({
-    matId, need, a: analyzeMatNeed(matId, grade, need)
+    matId, need, a: analyzeMatNeedFromInv(checkInv, matId, grade, need)
   }));
 
   const rows = analyses.map(({matId, need, a})=>{
     const mat = MATERIALS[matId];
     grandGold += a.totalGold;
-
     let pill='', notes=[];
 
     if(need <= a.direct){
       okCount++;
-      pill = `<span class="pill pill-ok">✓ Direct</span>`;
+      pill=`<span class="pill pill-ok">✓ Direct</span>`;
     } else if(a.canMeet && a.dismantleSteps.length===0){
       fuseCount++;
-      pill = `<span class="pill pill-ok-fuse">✓ Fuse</span>`;
+      pill=`<span class="pill pill-ok-fuse">✓ Fuse</span>`;
       notes.push(`<span class="fuse-txt">Fuse lower grades → +${a.fuseGain} ${grade}</span>`);
     } else if(a.canMeet){
       disCount++;
-      pill = `<span class="pill pill-ok-dis">✓ Dismantle</span>`;
-      if(a.fuseGain>0)
-        notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
+      pill=`<span class="pill pill-ok-dis">✓ Dismantle</span>`;
+      if(a.fuseGain>0) notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
       a.dismantleSteps.forEach(s=>
         notes.push(`<span class="dis-txt">Dismantle ${s.use}× ${s.grade} → +${s.gained}</span> <span class="gold-txt">(${s.cost.toLocaleString()} 💰)</span>`)
       );
     } else {
       lackCount++;
-      pill = `<span class="pill pill-lack">✗ −${a.stillMissing}</span>`;
-      if(a.fuseGain>0)
-        notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
+      pill=`<span class="pill pill-lack">✗ −${a.stillMissing}</span>`;
+      if(a.fuseGain>0) notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
       a.dismantleSteps.forEach(s=>
         notes.push(`<span class="dis-txt">Dismantle ${s.use}× ${s.grade} → +${s.gained}</span> <span class="gold-txt">(${s.cost.toLocaleString()} 💰)</span>`)
       );
-      notes.push(`<span class="miss-txt">Still missing: ${a.stillMissing} (no higher grade available)</span>`);
+      notes.push(`<span class="miss-txt">Still missing: ${a.stillMissing}</span>`);
     }
 
-    const noteHtml = notes.length
-      ? `<span class="action-note">${notes.join('<br>')}</span>`
-      : '';
-
+    const noteHtml=notes.length?`<span class="action-note">${notes.join('<br>')}</span>`:'';
     return `<tr>
       <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
       <td style="text-align:right">${need}</td>
@@ -749,13 +1092,94 @@ function renderChecker(){
     </tr>`;
   }).join('');
 
-  const canCraft  = lackCount===0;
-  const needsGold = grandGold>0;
-  const canAfford = state.gold>=grandGold;
+  const materialsOk = lackCount===0;
+  const canForge    = hasPrevGrade && materialsOk;
+  const needsGold   = grandGold>0;
+  const canAfford   = state.gold>=grandGold;
+
+  // Progress bar across all grades
+  const progressHtml=`
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:16px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--muted);margin-right:4px">Progress:</span>
+      ${GRADES.map((g,i)=>{
+        const c=!!state.crafted[craftedKey(eqId,g)];
+        const isTarget=g===grade;
+        const arrow=i<GRADES.length-1?`<span style="color:var(--border);margin:0 1px;font-size:11px">›</span>`:'';
+        return `<span class="gb gb-${g} grade-toggle ${c?'crafted':''}"
+          style="${isTarget?'outline:2px solid currentColor;outline-offset:2px':''}"
+          onclick="toggleCrafted('${eqId}','${g}',event);renderChecker()"
+          title="${c?'Crafted':'Not crafted'} — click to toggle">${c?'✓ ':''}${g}${isTarget?' ⬅':''}</span>${arrow}`;
+      }).join('')}
+    </div>`;
+
+  // Prerequisite card
+  let prereqHtml = '';
+  if(!prevGrade){
+    prereqHtml = `
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
+        <span class="pill pill-ok">✓</span> White is the base grade — no prior equipment needed.
+      </div>`;
+  } else {
+    // Build forge-chain line: owned → step → step → prevGrade
+    const chainSteps = prereq.chain || [];
+    const ownedGrade = prereq.ownedGrade;
+
+    // Chain display (only shown for chain/impossible types)
+    let chainHtml = '';
+    if(prereq.type === 'chain' || prereq.type === 'impossible'){
+      const steps = [];
+      if(ownedGrade)
+        steps.push(`<span class="gb gb-${ownedGrade} crafted">✓ ${ownedGrade} (owned)</span>`);
+      chainSteps.forEach(s=>{
+        const cls = s.matsOk ? 'fuse-txt' : 'miss-txt';
+        steps.push(`<span style="color:var(--border)">→</span>`);
+        steps.push(`<span class="gb gb-${s.grade}" style="opacity:.9">${s.grade}</span>`
+          +`<span class="${cls}" style="font-size:11px;margin-left:3px">${s.matsOk?'(mats ✓)':'(mats ✗)'}</span>`);
+      });
+      steps.push(`<span style="color:var(--border)">→</span>`);
+      steps.push(`<span class="gb gb-${prevGrade}" style="opacity:.9">${prevGrade} ← need</span>`);
+      chainHtml = `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px;font-size:12px">
+        ${steps.join('')}
+      </div>`;
+    }
+
+    // Status pill & label
+    let statusPill, statusDesc, markBtn = '';
+    if(prereq.type === 'direct'){
+      statusPill = `<span class="pill pill-ok">✓ Owned</span>`;
+      statusDesc = `You own <strong>${prevGrade} ${eq.name}</strong>`;
+      markBtn = `<button class="btn btn-ghost btn-sm" onclick="toggleCrafted('${eqId}','${prevGrade}',null);renderChecker()">Unmark</button>`;
+    } else if(prereq.type === 'chain'){
+      statusPill = `<span class="pill pill-ok-fuse">✓ Clearable</span>`;
+      statusDesc = `Forge up from <strong>${ownedGrade}</strong> — you have materials for all intermediate steps`;
+    } else if(prereq.type === 'impossible' && ownedGrade){
+      statusPill = `<span class="pill pill-lack">✗ Missing mats</span>`;
+      statusDesc = `Have <strong>${ownedGrade}</strong> but missing intermediate materials`;
+    } else {
+      statusPill = `<span class="pill pill-lack">✗ Not owned</span>`;
+      statusDesc = `You don't own any grade of this equipment yet`;
+      markBtn = `<button class="btn btn-ghost btn-sm" onclick="toggleCrafted('${eqId}','${prevGrade}',null);renderChecker()">Mark ${prevGrade} as owned</button>`;
+    }
+
+    prereqHtml = `
+      <div class="card" style="margin-bottom:12px;padding:12px 16px">
+        <div class="card-label" style="margin-bottom:8px">Prerequisite — Required Equipment</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          ${eq.img?`<img src="${eq.img}" width="32" height="32" style="object-fit:contain;border-radius:4px">`:''}
+          <div style="flex:1;min-width:120px">
+            <span style="font-weight:600">${prevGrade} ${eq.name}</span>
+            <small style="display:block;color:var(--muted);font-size:11px;margin-top:2px">${statusDesc}</small>
+          </div>
+          ${statusPill}
+          ${markBtn}
+        </div>
+        ${chainHtml}
+      </div>`;
+  }
 
   const goldBar = needsGold ? `
     <div class="ck-gold-bar">
-      <span>💰 Gold required for dismantling:</span>
+      <span>💰 Gold for dismantling:</span>
       <strong>${grandGold.toLocaleString()}</strong>
       <span>·</span>
       <span>Your gold: ${state.gold.toLocaleString()}</span>
@@ -763,17 +1187,25 @@ function renderChecker(){
     </div>` : '';
 
   res.innerHTML=`
+    ${progressHtml}
     <div class="summary-bar">
-      <div class="sum-chip ${canCraft?'ok':'lack'}">
-        <strong>${canCraft?'✓':'✗'}</strong>${canCraft?'Can craft':'Missing materials'}
+      <div class="sum-chip ${canForge?'ok':'lack'}">
+        <strong>${canForge?'✓':'✗'}</strong>${canForge?'Ready to forge':'Not ready'}
+      </div>
+      <div class="sum-chip ${hasPrevGrade?'ok':'lack'}">
+        <strong>${hasPrevGrade?'✓':'✗'}</strong>Prerequisite
       </div>
       ${okCount   ?`<div class="sum-chip ok"  ><strong>${okCount}</strong>Direct</div>`:''}
       ${fuseCount ?`<div class="sum-chip ok"  ><strong>${fuseCount}</strong>Via Fuse</div>`:''}
       ${disCount  ?`<div class="sum-chip ok"  ><strong>${disCount}</strong>Via Dismantle</div>`:''}
-      ${lackCount ?`<div class="sum-chip lack"><strong>${lackCount}</strong>Still missing</div>`:''}
+      ${lackCount ?`<div class="sum-chip lack"><strong>${lackCount}</strong>Missing mats</div>`:''}
     </div>
+    ${prereqHtml}
     ${goldBar}
     <div class="card">
+      ${usingDepletedInv ? `<div style="font-size:12px;color:var(--accent);margin-bottom:10px;padding:7px 10px;background:var(--gold-bg);border:1px solid var(--gold-c);border-radius:6px">
+        ⚠ Quantities shown after simulating intermediate forge steps — materials used to forge prerequisite grades are subtracted.
+      </div>` : ''}
       <table class="mat-table">
         <thead><tr>
           <th>Material <span class="gb gb-${grade}" style="margin-left:6px">${grade}</span></th>
