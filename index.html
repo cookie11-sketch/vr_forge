@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>VR Forge — Viking Rise Equipment Tracker</title>
+<title>Viking Rise Forge Simulator</title>
 <style>
   :root {
     --bg:      #0f0e13;
@@ -155,12 +155,7 @@
 <body>
 
 <header>
-  <h1>⚔ VR Forge</h1>
-  <div class="gold-tracker">
-    <span>💰</span>
-    <input type="number" id="gold-input" min="0" placeholder="0" oninput="setGold(this.value)" title="Your current gold" />
-    <span style="font-size:11px;opacity:.7">gold</span>
-  </div>
+  <h1>⚔ Viking Rise Forge Simulator</h1>
   <nav>
     <button class="active" onclick="showPage('inventory')">📦 Inventory</button>
     <button onclick="showPage('equipment')">⚙ Equipment</button>
@@ -233,11 +228,16 @@
 <div id="page-inventory" class="page active">
   <div class="section-header">
     <h2>Material Inventory</h2>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <div style="display:flex;gap:6px">
       <button class="btn btn-ghost btn-sm" onclick="resetInventory()">Reset All</button>
       <button class="btn btn-sm" onclick="exportData()">Export</button>
       <button class="btn btn-ghost btn-sm" onclick="importData()">Import</button>
     </div>
+  </div>
+  <div class="gold-tracker" style="margin-bottom:12px;width:fit-content">
+    <span>💰</span>
+    <input type="number" id="gold-input" min="0" placeholder="0" oninput="setGold(this.value)" title="Your current gold" />
+    <span style="font-size:11px;opacity:.7">gold</span>
   </div>
 
   <div class="card" style="overflow-x:auto">
