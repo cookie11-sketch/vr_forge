@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VR Forge — Viking Rise Equipment Tracker</title>
+<style>
+  :root {
+    --bg:      #0f0e13;
+    --surface: #1a1825;
+    --surface2:#231f32;
+    --border:  #332e4a;
+    --text:    #e8e0f0;
+    --muted:   #8a82a0;
+    --red:     #c74b4b;
+    --green:   #4ba86b;
+    --accent:  #c9922a;
+    --accent2: #7b5ea7;
+
+    --white-c:  #c8c8c8; --white-bg:  #28272e;
+    --green-c:  #4ba86b; --green-bg:  #182a20;
+    --blue-c:   #4b8ac7; --blue-bg:   #182233;
+    --purple-c: #a64bc7; --purple-bg: #221233;
+    --gold-c:   #c9922a; --gold-bg:   #2a1e0a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh}
+
+  /* ── Header ── */
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:19px;color:var(--accent);letter-spacing:1px;white-space:nowrap}
+  .gold-tracker{display:flex;align-items:center;gap:6px;background:var(--gold-bg);border:1px solid var(--gold-c);border-radius:8px;padding:5px 10px;margin-left:8px}
+  .gold-tracker span{color:var(--gold-c);font-weight:700;font-size:13px}
+  .gold-tracker input{background:transparent;border:none;color:var(--gold-c);font-weight:700;font-size:14px;width:90px;text-align:right;outline:none}
+  nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+  nav button{background:none;border:1px solid var(--border);color:var(--muted);padding:5px 13px;border-radius:6px;cursor:pointer;font-size:13px;transition:all .15s}
+  nav button.active,nav button:hover{background:var(--accent2);border-color:var(--accent2);color:#fff}
+
+  main{max-width:1100px;margin:0 auto;padding:20px}
+  .page{display:none}
+  .page.active{display:block}
+
+  /* ── Utilities ── */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+  .section-header h2{font-size:16px}
+  .card-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .empty{color:var(--muted);text-align:center;padding:36px;font-size:13px}
+  .btn{background:var(--accent);border:none;color:#fff;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:filter .15s}
+  .btn:hover{filter:brightness(1.12)}
+  .btn-sm{padding:4px 10px;font-size:12px}
+  .btn-ghost{background:none;border:1px solid var(--border);color:var(--muted)}
+  .btn-ghost:hover{border-color:var(--accent2);color:var(--text)}
+  .btn-red{background:var(--red);border:none;color:#fff}
+  .btn-red:hover{filter:brightness(1.1)}
+  .tag{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:11px;color:var(--muted)}
+  .todo-tag{background:#2a1a0a;border-color:#5a3a1a;color:#a06030}
+
+  /* ── Grade badges ── */
+  .gb{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+  .gb-White {background:var(--white-bg);color:var(--white-c)}
+  .gb-Green {background:var(--green-bg);color:var(--green-c)}
+  .gb-Blue  {background:var(--blue-bg) ;color:var(--blue-c)}
+  .gb-Purple{background:var(--purple-bg);color:var(--purple-c)}
+  .gb-Gold  {background:var(--gold-bg) ;color:var(--gold-c)}
+
+  /* ── Inventory page ── */
+  .inv-table{width:100%;border-collapse:collapse}
+  .inv-table th{padding:6px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+  .inv-table th.grade-th{text-align:center;min-width:110px}
+  .inv-table td{padding:5px 8px;border-bottom:1px solid #1c1928;vertical-align:middle}
+  .inv-table tr:last-child td{border-bottom:none}
+  .mat-cell{display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .mat-icon{width:26px;height:26px;object-fit:contain;vertical-align:middle;flex-shrink:0}
+  .eq-icon {width:32px;height:32px;object-fit:contain;flex-shrink:0}
+  .grade-cell{text-align:center}
+  .qty-wrap{display:flex;align-items:center;justify-content:center;gap:3px}
+  .qty-wrap button{background:var(--border);border:none;color:var(--text);width:20px;height:20px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .qty-wrap button:hover{background:var(--accent2)}
+  .qty-wrap input{background:var(--bg);border:1px solid var(--border);color:var(--text);width:58px;padding:2px 4px;border-radius:4px;text-align:center;font-size:13px}
+  .qty-wrap input:focus{outline:1px solid var(--accent2)}
+
+  /* Workshop */
+  .workshop{margin-top:20px}
+  .workshop-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:700px){.workshop-grid{grid-template-columns:1fr}}
+  .ws-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px}
+  .ws-card h3{font-size:13px;font-weight:700;margin-bottom:10px}
+  .ws-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .ws-row label{font-size:12px;color:var(--muted);min-width:60px}
+  .ws-row select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px;flex:1}
+  .ws-info{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;margin:8px 0;line-height:1.8}
+  .ws-info .label{color:var(--muted);font-size:11px}
+  .ws-info .val{font-weight:700}
+  .ws-info .ok{color:var(--green)}
+  .ws-info .warn{color:var(--accent)}
+  .ws-info .err{color:var(--red)}
+
+  /* ── Equipment page ── */
+  .eq-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  .eq-filters select,.eq-filters input{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px}
+  .eq-filters input{flex:1;min-width:140px}
+  .eq-list{display:flex;flex-direction:column;gap:6px}
+  .eq-row{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .eq-row.skipped{opacity:.4}
+  .eq-name{flex:1;font-weight:600;min-width:120px}
+  .eq-name small{display:block;color:var(--muted);font-size:11px;font-weight:400;margin-top:1px}
+  .type-badge{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
+  .type-Blessed{background:#1a2a1a;color:#5ac85a}
+  .type-Basic  {background:#2a2a1a;color:#a0a040}
+  .type-Monster{background:#2a1a1a;color:#c05050}
+  .skip-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:3px 9px;border-radius:5px;cursor:pointer;font-size:12px;white-space:nowrap;transition:all .15s}
+  .skip-btn:hover{background:var(--red);border-color:var(--red);color:#fff}
+  .skip-btn.on{background:var(--red);border-color:var(--red);color:#fff}
+
+  /* ── Checker page ── */
+  .ck-controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end}
+  .ck-controls label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+  .ck-controls select{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:6px;font-size:13px;min-width:180px}
+  .ck-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);padding-bottom:2px}
+  .ck-toggle input{accent-color:var(--accent2);width:14px;height:14px;cursor:pointer}
+  .summary-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .sum-chip{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12px;color:var(--muted)}
+  .sum-chip strong{display:block;font-size:22px;font-weight:700;line-height:1.1;margin-bottom:2px}
+  .sum-chip.ok strong{color:var(--green)}
+  .sum-chip.lack strong{color:var(--red)}
+  .mat-table{width:100%;border-collapse:collapse}
+  .mat-table th{text-align:left;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:5px 10px;border-bottom:1px solid var(--border)}
+  .mat-table td{padding:8px 10px;border-bottom:1px solid #1c1928;font-size:13px;vertical-align:middle}
+  .mat-table tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
+  .pill-ok        {background:var(--green-bg);color:var(--green-c)}
+  .pill-ok-fuse   {background:#182a20;color:#70d880}
+  .pill-ok-dis    {background:#2a1a10;color:#d8943a}
+  .pill-lack      {background:#2a1515;color:var(--red)}
+  .action-note    {display:block;font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5}
+  .action-note .fuse-txt  {color:#70d880}
+  .action-note .dis-txt   {color:var(--accent)}
+  .action-note .gold-txt  {color:var(--gold-c);font-weight:700}
+  .action-note .miss-txt  {color:var(--red)}
+  .ck-gold-bar{background:var(--gold-bg);border:1px solid var(--gold-c);border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}
+  .ck-gold-bar strong{color:var(--gold-c);font-size:16px}
+  .ck-gold-bar .afford-ok  {color:var(--green-c);font-weight:700}
+  .ck-gold-bar .afford-no  {color:var(--red);font-weight:700}
+
+  /* ── Convert page ── */
+  .convert-note{background:#1a2233;border:1px solid #2a3a5a;border-radius:8px;padding:11px 15px;color:#8ab0e0;font-size:13px;margin-bottom:16px;line-height:1.6}
+  .cv-section{margin-bottom:20px}
+  .cv-list{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+  .cv-row{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 14px;display:flex;align-items:center;gap:10px}
+  .cv-row .mat-name{flex:1;font-size:13px}
+  .cv-row .mat-name small{display:block;color:var(--muted);font-size:11px}
+  .surplus-val{font-weight:700;font-size:15px;color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚔ VR Forge</h1>
+  <div class="gold-tracker">
+    <span>💰</span>
+    <input type="number" id="gold-input" min="0" placeholder="0" oninput="setGold(this.value)" title="Your current gold" />
+    <span style="font-size:11px;opacity:.7">gold</span>
+  </div>
+  <nav>
+    <button class="active" onclick="showPage('inventory')">Inventory</button>
+    <button onclick="showPage('equipment')">Equipment</button>
+    <button onclick="showPage('checker')">Checker</button>
+    <button onclick="showPage('convert')">Surplus</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ════════════════════════ INVENTORY ════════════════════════ -->
+<div id="page-inventory" class="page active">
+  <div class="section-header">
+    <h2>Material Inventory</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="resetInventory()">Reset All</button>
+      <button class="btn btn-sm" onclick="exportData()">Export</button>
+      <button class="btn btn-ghost btn-sm" onclick="importData()">Import</button>
+    </div>
+  </div>
+
+  <div class="card" style="overflow-x:auto">
+    <table class="inv-table" id="inv-table"></table>
+  </div>
+
+  <!-- Fusion Workshop -->
+  <div class="workshop">
+    <div class="section-header" style="margin-top:6px">
+      <h2>⚗ Fusion Workshop</h2>
+    </div>
+    <div class="workshop-grid">
+      <!-- Fuse -->
+      <div class="ws-card">
+        <h3>↑ Fuse  <small style="color:var(--muted);font-weight:400">(4 lower → 1 higher)</small></h3>
+        <div class="ws-row">
+          <label>Material</label>
+          <select id="fuse-mat" onchange="updateFuseInfo()">
+            <option value="">— pick material —</option>
+          </select>
+        </div>
+        <div class="ws-row">
+          <label>From grade</label>
+          <select id="fuse-from" onchange="updateFuseInfo()">
+            <option value="">— pick grade —</option>
+            <option>White</option><option>Green</option><option>Blue</option><option>Purple</option>
+          </select>
+        </div>
+        <div id="fuse-info" class="ws-info" style="display:none"></div>
+        <div class="ws-row">
+          <label>Amount</label>
+          <input type="number" id="fuse-qty" min="1" value="1" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px;width:80px" oninput="updateFuseInfo()" />
+          <button class="btn btn-sm" onclick="doFuse()">Fuse</button>
+        </div>
+      </div>
+
+      <!-- Dismantle -->
+      <div class="ws-card">
+        <h3>↓ Dismantle  <small style="color:var(--muted);font-weight:400">(1 higher → 4 lower, costs gold)</small></h3>
+        <div class="ws-row">
+          <label>Material</label>
+          <select id="dis-mat" onchange="updateDisInfo()">
+            <option value="">— pick material —</option>
+          </select>
+        </div>
+        <div class="ws-row">
+          <label>From grade</label>
+          <select id="dis-from" onchange="updateDisInfo()">
+            <option value="">— pick grade —</option>
+            <option>Green</option><option>Blue</option><option>Purple</option><option>Gold</option>
+          </select>
+        </div>
+        <div id="dis-info" class="ws-info" style="display:none"></div>
+        <div class="ws-row">
+          <label>Amount</label>
+          <input type="number" id="dis-qty" min="1" value="1" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px;width:80px" oninput="updateDisInfo()" />
+          <button class="btn btn-red btn-sm" onclick="doDismantle()">Dismantle</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ EQUIPMENT ════════════════════════ -->
+<div id="page-equipment" class="page">
+  <div class="section-header">
+    <h2>Equipment Database</h2>
+    <span class="tag" id="eq-count-tag"></span>
+  </div>
+  <div class="eq-filters">
+    <input id="eq-search" type="text" placeholder="Search…" oninput="renderEquipment()" />
+    <select id="eq-type-filter" onchange="renderEquipment()">
+      <option value="">All Types</option>
+      <option>Blessed</option>
+      <option>Basic</option>
+      <option>Monster</option>
+    </select>
+    <select id="eq-slot-filter" onchange="renderEquipment()">
+      <option value="">All Slots</option>
+      <option>Weapon</option>
+      <option>Headgear</option>
+      <option>Top</option>
+      <option>Bottom</option>
+    </select>
+    <select id="eq-skip-filter" onchange="renderEquipment()">
+      <option value="">All</option>
+      <option value="active">Active only</option>
+      <option value="skipped">Skipped only</option>
+    </select>
+  </div>
+  <div id="eq-list" class="eq-list"></div>
+</div>
+
+<!-- ════════════════════════ CHECKER ════════════════════════ -->
+<div id="page-checker" class="page">
+  <div class="section-header"><h2>Material Checker</h2></div>
+  <div class="ck-controls">
+    <label>Equipment
+      <select id="ck-eq" onchange="renderChecker()">
+        <option value="">— Select —</option>
+      </select>
+    </label>
+    <label>Grade
+      <select id="ck-grade" onchange="renderChecker()">
+        <option value="">— Select —</option>
+        <option>White</option><option>Green</option><option>Blue</option>
+        <option>Purple</option><option>Gold</option>
+      </select>
+    </label>
+  </div>
+  <div id="ck-result"></div>
+</div>
+
+<!-- ════════════════════════ SURPLUS ════════════════════════ -->
+<div id="page-convert" class="page">
+  <div class="section-header"><h2>Surplus & Convert</h2></div>
+  <div class="convert-note">
+    Materials listed here are either in excess of what your <strong>active</strong> equipment needs,
+    or they come from equipment you have <strong>Skipped</strong>. These are safe to fuse or convert.
+  </div>
+  <div id="convert-container"></div>
+</div>
+
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  GAME DATA
+// ══════════════════════════════════════════════════════════════
+const GRADES = ['White','Green','Blue','Purple','Gold'];
+
+const GRADE_STYLE = {
+  White:  { c:'var(--white-c)',  bg:'var(--white-bg)'  },
+  Green:  { c:'var(--green-c)',  bg:'var(--green-bg)'  },
+  Blue:   { c:'var(--blue-c)',   bg:'var(--blue-bg)'   },
+  Purple: { c:'var(--purple-c)', bg:'var(--purple-bg)' },
+  Gold:   { c:'var(--gold-c)',   bg:'var(--gold-bg)'   },
+};
+
+// Dismantle cost: cost to break 1 of THIS grade into 4 of the grade below
+const DISMANTLE_COST = { Green:500, Blue:1500, Purple:10000, Gold:25000 };
+const FUSE_RATE = 4;
+
+const MATERIALS = {
+  spiderSilk:    { name:'Spider Silk',    img:'assets/m_spider_silk.png'    },
+  divineBlood:   { name:'Divine Blood',   img:'assets/m_divine_blood.png'   },
+  tannedLeather: { name:'Tanned Leather', img:'assets/m_tanned_leather.png' },
+  stardust:      { name:'Stardust',       img:'assets/m_stardust.png'       },
+  asbothMitril:  { name:'Asboth Mitril',  img:'assets/m_asboth_mithril.png' },
+};
+function matImg(mat, size=24){
+  return `<img src="${mat.img}" width="${size}" height="${size}" class="mat-icon" alt="${mat.name}" />`;
+}
+const MAT_IDS = Object.keys(MATERIALS);
+
+// Equipment DB
+// recipe quantities are the same for all grades;
+// the GRADE of required material matches the equipment grade.
+// type: 'Blessed' | 'Basic' | 'Monster'   (Basic/Monster are TODO placeholders)
+const EQUIPMENT_DB = [
+  // ── Blessed ──────────────────────────────────────────────
+  {
+    id:'blessed_weapon',   name:'Blessed Weapon',   type:'Blessed', slot:'Weapon',   img:'assets/e_blessed_weapon.png',
+    recipe:{ spiderSilk:17, divineBlood:11, tannedLeather:13, stardust:16, asbothMitril:11 }
+  },
+  {
+    id:'blessed_headgear', name:'Blessed Headgear', type:'Blessed', slot:'Headgear', img:'assets/e_blessed_headgear.png',
+    recipe:{ spiderSilk:11, divineBlood:14, tannedLeather:13, stardust:11, asbothMitril:10 }
+  },
+  {
+    id:'blessed_top',      name:'Blessed Top',      type:'Blessed', slot:'Top',      img:'assets/e_blessed_top.png',
+    recipe:{ spiderSilk:10, divineBlood:11, tannedLeather:13, stardust:11, asbothMitril:14 }
+  },
+  {
+    id:'blessed_bottom',   name:'Blessed Bottom',   type:'Blessed', slot:'Bottom',   img:'assets/e_blessed_bottom.png',
+    recipe:{ spiderSilk:11, divineBlood:13, tannedLeather:10, stardust:11, asbothMitril:14 }
+  },
+  // ── Basic (TODO) ──────────────────────────────────────────
+  { id:'basic_weapon',   name:'Basic Weapon',   type:'Basic',   slot:'Weapon',   img:null, recipe:{} },
+  { id:'basic_headgear', name:'Basic Headgear', type:'Basic',   slot:'Headgear', img:null, recipe:{} },
+  { id:'basic_top',      name:'Basic Top',      type:'Basic',   slot:'Top',      img:null, recipe:{} },
+  { id:'basic_bottom',   name:'Basic Bottom',   type:'Basic',   slot:'Bottom',   img:null, recipe:{} },
+  // ── Monster (TODO) ────────────────────────────────────────
+  { id:'monster_weapon',   name:'Monster Weapon',   type:'Monster', slot:'Weapon',   img:null, recipe:{} },
+  { id:'monster_headgear', name:'Monster Headgear', type:'Monster', slot:'Headgear', img:null, recipe:{} },
+  { id:'monster_top',      name:'Monster Top',      type:'Monster', slot:'Top',      img:null, recipe:{} },
+  { id:'monster_bottom',   name:'Monster Bottom',   type:'Monster', slot:'Bottom',   img:null, recipe:{} },
+];
+
+// ══════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════
+let state = { inventory:{}, skipped:{}, gold:0 };
+
+function invKey(matId, grade){ return matId+'_'+grade; }
+
+function loadState(){
+  try{ const r=localStorage.getItem('vrforge_v2'); if(r) state=JSON.parse(r); }catch{}
+  for(const mat of MAT_IDS)
+    for(const g of GRADES)
+      if(state.inventory[invKey(mat,g)]==null) state.inventory[invKey(mat,g)]=0;
+  if(!state.gold) state.gold=0;
+}
+function saveState(){ localStorage.setItem('vrforge_v2',JSON.stringify(state)); }
+
+function getQty(matId,grade){ return state.inventory[invKey(matId,grade)]||0; }
+function setQtyRaw(matId,grade,val){
+  state.inventory[invKey(matId,grade)]=Math.max(0,parseInt(val)||0);
+  saveState();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  GOLD
+// ══════════════════════════════════════════════════════════════
+function setGold(v){ state.gold=Math.max(0,parseInt(v)||0); saveState(); }
+function syncGoldUI(){ document.getElementById('gold-input').value=state.gold||''; }
+
+// ══════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════════════════════════
+const PAGES = ['inventory','equipment','checker','convert'];
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelectorAll('nav button')[PAGES.indexOf(name)].classList.add('active');
+  if(name==='equipment') renderEquipment();
+  if(name==='checker')   { populateCheckerSelects(); renderChecker(); }
+  if(name==='convert')   renderConvert();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  INVENTORY PAGE
+// ══════════════════════════════════════════════════════════════
+function renderInventory(){
+  const grades = GRADES;
+  let th = `<thead><tr>
+    <th>Material</th>
+    ${grades.map(g=>`<th class="grade-th"><span class="gb gb-${g}">${g}</span></th>`).join('')}
+  </tr></thead>`;
+
+  let rows = MAT_IDS.map(matId=>{
+    const mat = MATERIALS[matId];
+    const cells = grades.map(g=>{
+      const qty = getQty(matId,g);
+      return `<td class="grade-cell">
+        <div class="qty-wrap">
+          <button onclick="adj('${matId}','${g}',-1)">−</button>
+          <input type="number" min="0" value="${qty}" id="inv-${matId}-${g}"
+            onchange="setQtyRaw('${matId}','${g}',this.value)"
+            onblur="setQtyRaw('${matId}','${g}',this.value)" />
+          <button onclick="adj('${matId}','${g}',1)">+</button>
+        </div>
+      </td>`;
+    }).join('');
+    return `<tr>
+      <td><div class="mat-cell">${matImg(mat,26)}<span>${mat.name}</span></div></td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  document.getElementById('inv-table').innerHTML = th+'<tbody>'+rows+'</tbody>';
+}
+
+function adj(matId,grade,delta){
+  const key=invKey(matId,grade);
+  state.inventory[key]=Math.max(0,(state.inventory[key]||0)+delta);
+  saveState();
+  const el=document.getElementById('inv-'+matId+'-'+grade);
+  if(el) el.value=state.inventory[key];
+}
+
+function resetInventory(){
+  if(!confirm('Reset all material quantities to 0?')) return;
+  for(const mat of MAT_IDS) for(const g of GRADES) state.inventory[invKey(mat,g)]=0;
+  saveState(); renderInventory();
+}
+
+// ── Export / Import ──
+function exportData(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='vrforge_save.json'; a.click();
+}
+function importData(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json';
+  inp.onchange=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=ev=>{ try{ state=JSON.parse(ev.target.result); saveState(); renderInventory(); syncGoldUI(); alert('Imported!'); }catch{ alert('Invalid file.'); }};
+    r.readAsText(f);
+  }; inp.click();
+}
+
+// ── Workshop: Fuse ──
+function populateWorkshopSelects(){
+  ['fuse-mat','dis-mat'].forEach(id=>{
+    const sel=document.getElementById(id);
+    sel.innerHTML='<option value="">— pick material —</option>'+
+      MAT_IDS.map(m=>`<option value="${m}">${MATERIALS[m].name}</option>`).join('');
+  });
+}
+
+function updateFuseInfo(){
+  const matId=document.getElementById('fuse-mat').value;
+  const fromG=document.getElementById('fuse-from').value;
+  const qty=Math.max(1,parseInt(document.getElementById('fuse-qty').value)||1);
+  const info=document.getElementById('fuse-info');
+  if(!matId||!fromG){ info.style.display='none'; return; }
+  const fromIdx=GRADES.indexOf(fromG);
+  if(fromIdx>=GRADES.length-1){ info.innerHTML='<span class="err">Gold is the highest grade.</span>'; info.style.display='block'; return; }
+  const toG=GRADES[fromIdx+1];
+  const have=getQty(matId,fromG);
+  const canMake=Math.floor(have/FUSE_RATE);
+  const actual=Math.min(qty,canMake);
+  const use=actual*FUSE_RATE;
+  const gain=actual;
+  let cls=actual>=qty?'ok':'warn';
+  info.style.display='block';
+  info.innerHTML=`
+    <div><span class="label">Have ${fromG}: </span><span class="val">${have}</span></div>
+    <div><span class="label">Max fuseable: </span><span class="val">${canMake} → ${canMake} ${toG}</span></div>
+    <div><span class="label">This action: </span><span class="val ${cls}">use ${use} ${fromG} → gain ${gain} ${toG}</span></div>
+  `;
+}
+
+function doFuse(){
+  const matId=document.getElementById('fuse-mat').value;
+  const fromG=document.getElementById('fuse-from').value;
+  const qty=Math.max(1,parseInt(document.getElementById('fuse-qty').value)||1);
+  if(!matId||!fromG){ alert('Select a material and grade.'); return; }
+  const fromIdx=GRADES.indexOf(fromG);
+  if(fromIdx>=GRADES.length-1){ alert('Cannot fuse Gold (max grade).'); return; }
+  const toG=GRADES[fromIdx+1];
+  const have=getQty(matId,fromG);
+  const canMake=Math.floor(have/FUSE_RATE);
+  const actual=Math.min(qty,canMake);
+  if(actual<=0){ alert(`Not enough ${fromG} ${MATERIALS[matId].name} to fuse. Need ${FUSE_RATE}, have ${have}.`); return; }
+  state.inventory[invKey(matId,fromG)]-=actual*FUSE_RATE;
+  state.inventory[invKey(matId,toG)]=(state.inventory[invKey(matId,toG)]||0)+actual;
+  saveState(); renderInventory(); updateFuseInfo();
+}
+
+// ── Workshop: Dismantle ──
+function updateDisInfo(){
+  const matId=document.getElementById('dis-mat').value;
+  const fromG=document.getElementById('dis-from').value;
+  const qty=Math.max(1,parseInt(document.getElementById('dis-qty').value)||1);
+  const info=document.getElementById('dis-info');
+  if(!matId||!fromG){ info.style.display='none'; return; }
+  const fromIdx=GRADES.indexOf(fromG);
+  if(fromIdx<=0){ info.innerHTML='<span class="err">White cannot be dismantled.</span>'; info.style.display='block'; return; }
+  const toG=GRADES[fromIdx-1];
+  const costPer=DISMANTLE_COST[fromG];
+  const totalCost=costPer*qty;
+  const have=getQty(matId,fromG);
+  const actual=Math.min(qty,have);
+  const afford=Math.floor(state.gold/costPer);
+  const doable=Math.min(actual,afford);
+  const gain=doable*FUSE_RATE;
+  info.style.display='block';
+  info.innerHTML=`
+    <div><span class="label">Have ${fromG}: </span><span class="val">${have}</span></div>
+    <div><span class="label">Cost per piece: </span><span class="val">${costPer.toLocaleString()} gold</span></div>
+    <div><span class="label">Total cost (×${qty}): </span><span class="val ${totalCost>state.gold?'err':'ok'}">${totalCost.toLocaleString()} gold</span></div>
+    <div><span class="label">Your gold: </span><span class="val">${state.gold.toLocaleString()}</span></div>
+    <div><span class="label">Result: </span><span class="val ${doable<qty?'warn':'ok'}">−${doable} ${fromG} → +${gain} ${toG}</span></div>
+  `;
+}
+
+function doDismantle(){
+  const matId=document.getElementById('dis-mat').value;
+  const fromG=document.getElementById('dis-from').value;
+  const qty=Math.max(1,parseInt(document.getElementById('dis-qty').value)||1);
+  if(!matId||!fromG){ alert('Select a material and grade.'); return; }
+  const fromIdx=GRADES.indexOf(fromG);
+  if(fromIdx<=0){ alert('Cannot dismantle White (lowest grade).'); return; }
+  const toG=GRADES[fromIdx-1];
+  const costPer=DISMANTLE_COST[fromG];
+  const have=getQty(matId,fromG);
+  if(have<qty){ alert(`Not enough ${fromG} ${MATERIALS[matId].name}. Have ${have}, need ${qty}.`); return; }
+  const totalCost=costPer*qty;
+  if(state.gold<totalCost){ alert(`Not enough gold. Need ${totalCost.toLocaleString()}, have ${state.gold.toLocaleString()}.`); return; }
+  state.inventory[invKey(matId,fromG)]-=qty;
+  state.inventory[invKey(matId,toG)]=(state.inventory[invKey(matId,toG)]||0)+(qty*FUSE_RATE);
+  state.gold-=totalCost;
+  saveState(); renderInventory(); syncGoldUI(); updateDisInfo();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  EQUIPMENT PAGE
+// ══════════════════════════════════════════════════════════════
+function renderEquipment(){
+  const search=document.getElementById('eq-search').value.toLowerCase();
+  const typeF =document.getElementById('eq-type-filter').value;
+  const slotF =document.getElementById('eq-slot-filter').value;
+  const skipF =document.getElementById('eq-skip-filter').value;
+
+  let list=EQUIPMENT_DB.filter(eq=>{
+    if(search && !eq.name.toLowerCase().includes(search)) return false;
+    if(typeF && eq.type!==typeF) return false;
+    if(slotF && eq.slot!==slotF) return false;
+    const sk=!!state.skipped[eq.id];
+    if(skipF==='active'  && sk)  return false;
+    if(skipF==='skipped' && !sk) return false;
+    return true;
+  });
+
+  document.getElementById('eq-count-tag').textContent=list.length+' items';
+
+  if(!list.length){ document.getElementById('eq-list').innerHTML='<div class="empty">No equipment found.</div>'; return; }
+
+  document.getElementById('eq-list').innerHTML=list.map(eq=>{
+    const sk=!!state.skipped[eq.id];
+    const isTodo=eq.type!=='Blessed';
+    const grades=GRADES.filter(g=>Object.keys(eq.recipe).length>0);
+    return `<div class="eq-row ${sk?'skipped':''}" id="eq-row-${eq.id}">
+      ${eq.img?`<img src="${eq.img}" class="eq-icon" alt="${eq.name}" />`:'<div class="eq-icon" style="opacity:.2;background:var(--border);border-radius:4px"></div>'}
+      <div class="eq-name">${eq.name}<small>${eq.slot}</small></div>
+      <span class="type-badge type-${eq.type}">${eq.type}</span>
+      ${isTodo?'<span class="tag todo-tag">TODO</span>':''}
+      ${GRADES.map(g=>`<span class="gb gb-${g}">${g}</span>`).join('')}
+      <button class="skip-btn ${sk?'on':''}" onclick="toggleSkip('${eq.id}',event)">${sk?'✗ Skipped':'Skip'}</button>
+      ${!isTodo?`<button class="btn btn-ghost btn-sm" onclick="openChecker('${eq.id}')">Check</button>`:''}
+    </div>`;
+  }).join('');
+}
+
+function toggleSkip(id,e){
+  e.stopPropagation();
+  state.skipped[id]=!state.skipped[id];
+  if(!state.skipped[id]) delete state.skipped[id];
+  saveState(); renderEquipment();
+}
+function openChecker(id){ showPage('checker'); document.getElementById('ck-eq').value=id; renderChecker(); }
+
+// ══════════════════════════════════════════════════════════════
+//  CHECKER PAGE
+// ══════════════════════════════════════════════════════════════
+function populateCheckerSelects(){
+  const sel=document.getElementById('ck-eq');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">— Select —</option>'+
+    EQUIPMENT_DB.filter(e=>Object.keys(e.recipe).length>0)
+      .map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  if(prev) sel.value=prev;
+}
+
+// Gold cost to chain-dismantle 1 unit of GRADES[fromIdx] down to GRADES[toIdx] (fromIdx > toIdx)
+function dismantleCostPerUnit(fromIdx, toIdx){
+  let cost=0, mult=1;
+  for(let i=fromIdx; i>toIdx; i--){
+    cost += mult * DISMANTLE_COST[GRADES[i]];
+    mult *= FUSE_RATE;
+  }
+  return cost;
+}
+
+// Full analysis of one material need at a specific grade.
+// Returns: { direct, fuseGain, afterFusion, dismantleSteps:[{grade,use,gained,cost}],
+//            totalGold, stillMissing, canMeet }
+function analyzeMatNeed(matId, targetGrade, need){
+  const tIdx = GRADES.indexOf(targetGrade);
+
+  // Step 1 — fuse lower grades up (simulation, doesn't modify state)
+  let counts = GRADES.map(g => getQty(matId, g));
+  for(let i=0; i<tIdx; i++){
+    const gain = Math.floor(counts[i] / FUSE_RATE);
+    counts[i+1] += gain;
+    counts[i]   = counts[i] % FUSE_RATE;
+  }
+  const direct     = getQty(matId, targetGrade);
+  const afterFusion= counts[tIdx];
+  let   remaining  = Math.max(0, need - afterFusion);
+
+  // Step 2 — dismantle higher grades if still short (cheapest first = closest grade first)
+  const dismantleSteps = [];
+  let totalGold = 0;
+  if(remaining > 0){
+    for(let h=tIdx+1; h<GRADES.length && remaining>0; h++){
+      const avail      = getQty(matId, GRADES[h]);
+      if(avail <= 0) continue;
+      const unitsPerH  = Math.pow(FUSE_RATE, h - tIdx);
+      const goldPerH   = dismantleCostPerUnit(h, tIdx);
+      const needed     = Math.ceil(remaining / unitsPerH);
+      const use        = Math.min(avail, needed);
+      const gained     = use * unitsPerH;
+      const cost       = use * goldPerH;
+      totalGold   += cost;
+      remaining   -= gained;
+      dismantleSteps.push({ grade: GRADES[h], use, gained, cost });
+    }
+  }
+
+  return {
+    direct, fuseGain: afterFusion - direct, afterFusion,
+    dismantleSteps, totalGold,
+    stillMissing: Math.max(0, remaining),
+    canMeet: remaining <= 0,
+  };
+}
+
+function renderChecker(){
+  const eqId  = document.getElementById('ck-eq').value;
+  const grade = document.getElementById('ck-grade').value;
+  const res   = document.getElementById('ck-result');
+
+  if(!eqId || !grade){
+    res.innerHTML='<div class="empty">Select equipment and grade above.</div>';
+    return;
+  }
+  const eq = EQUIPMENT_DB.find(e=>e.id===eqId);
+  if(!eq || !Object.keys(eq.recipe).length){
+    res.innerHTML='<div class="empty">This equipment has no recipe yet (TODO).</div>';
+    return;
+  }
+
+  let okCount=0, fuseCount=0, disCount=0, lackCount=0;
+  let grandGold=0;
+
+  const analyses = Object.entries(eq.recipe).map(([matId,need])=>({
+    matId, need, a: analyzeMatNeed(matId, grade, need)
+  }));
+
+  const rows = analyses.map(({matId, need, a})=>{
+    const mat = MATERIALS[matId];
+    grandGold += a.totalGold;
+
+    let pill='', notes=[];
+
+    if(need <= a.direct){
+      okCount++;
+      pill = `<span class="pill pill-ok">✓ Direct</span>`;
+    } else if(a.canMeet && a.dismantleSteps.length===0){
+      fuseCount++;
+      pill = `<span class="pill pill-ok-fuse">✓ Fuse</span>`;
+      notes.push(`<span class="fuse-txt">Fuse lower grades → +${a.fuseGain} ${grade}</span>`);
+    } else if(a.canMeet){
+      disCount++;
+      pill = `<span class="pill pill-ok-dis">✓ Dismantle</span>`;
+      if(a.fuseGain>0)
+        notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
+      a.dismantleSteps.forEach(s=>
+        notes.push(`<span class="dis-txt">Dismantle ${s.use}× ${s.grade} → +${s.gained}</span> <span class="gold-txt">(${s.cost.toLocaleString()} 💰)</span>`)
+      );
+    } else {
+      lackCount++;
+      pill = `<span class="pill pill-lack">✗ −${a.stillMissing}</span>`;
+      if(a.fuseGain>0)
+        notes.push(`<span class="fuse-txt">Fuse lower → +${a.fuseGain}</span>`);
+      a.dismantleSteps.forEach(s=>
+        notes.push(`<span class="dis-txt">Dismantle ${s.use}× ${s.grade} → +${s.gained}</span> <span class="gold-txt">(${s.cost.toLocaleString()} 💰)</span>`)
+      );
+      notes.push(`<span class="miss-txt">Still missing: ${a.stillMissing} (no higher grade available)</span>`);
+    }
+
+    const noteHtml = notes.length
+      ? `<span class="action-note">${notes.join('<br>')}</span>`
+      : '';
+
+    return `<tr>
+      <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
+      <td style="text-align:right">${need}</td>
+      <td style="text-align:right">${a.direct}</td>
+      <td>${pill}${noteHtml}</td>
+    </tr>`;
+  }).join('');
+
+  const canCraft  = lackCount===0;
+  const needsGold = grandGold>0;
+  const canAfford = state.gold>=grandGold;
+
+  const goldBar = needsGold ? `
+    <div class="ck-gold-bar">
+      <span>💰 Gold required for dismantling:</span>
+      <strong>${grandGold.toLocaleString()}</strong>
+      <span>·</span>
+      <span>Your gold: ${state.gold.toLocaleString()}</span>
+      <span class="${canAfford?'afford-ok':'afford-no'}">${canAfford?'✓ Enough':'✗ Short by '+(grandGold-state.gold).toLocaleString()}</span>
+    </div>` : '';
+
+  res.innerHTML=`
+    <div class="summary-bar">
+      <div class="sum-chip ${canCraft?'ok':'lack'}">
+        <strong>${canCraft?'✓':'✗'}</strong>${canCraft?'Can craft':'Missing materials'}
+      </div>
+      ${okCount   ?`<div class="sum-chip ok"  ><strong>${okCount}</strong>Direct</div>`:''}
+      ${fuseCount ?`<div class="sum-chip ok"  ><strong>${fuseCount}</strong>Via Fuse</div>`:''}
+      ${disCount  ?`<div class="sum-chip ok"  ><strong>${disCount}</strong>Via Dismantle</div>`:''}
+      ${lackCount ?`<div class="sum-chip lack"><strong>${lackCount}</strong>Still missing</div>`:''}
+    </div>
+    ${goldBar}
+    <div class="card">
+      <table class="mat-table">
+        <thead><tr>
+          <th>Material <span class="gb gb-${grade}" style="margin-left:6px">${grade}</span></th>
+          <th style="text-align:right">Required</th>
+          <th style="text-align:right">Have (direct)</th>
+          <th>Status &amp; Actions</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SURPLUS PAGE
+// ══════════════════════════════════════════════════════════════
+function renderConvert(){
+  // Sum required materials across all grades of all active equipment
+  // key: `${matId}_${grade}` → total needed
+  const required={};
+  for(const eq of EQUIPMENT_DB){
+    if(state.skipped[eq.id]||!Object.keys(eq.recipe).length) continue;
+    for(const grade of GRADES){
+      for(const [matId,qty] of Object.entries(eq.recipe)){
+        const k=invKey(matId,grade);
+        required[k]=(required[k]||0)+qty;
+      }
+    }
+  }
+
+  // Materials locked in skipped equipment (freed up)
+  const freed={};
+  for(const eq of EQUIPMENT_DB){
+    if(!state.skipped[eq.id]||!Object.keys(eq.recipe).length) continue;
+    for(const grade of GRADES){
+      for(const [matId,qty] of Object.entries(eq.recipe)){
+        const k=invKey(matId,grade);
+        freed[k]=(freed[k]||0)+qty;
+      }
+    }
+  }
+
+  // Surplus = inventory - required
+  const surplus={};
+  for(const [k,have] of Object.entries(state.inventory)){
+    const req=required[k]||0;
+    if(have>req) surplus[k]=have-req;
+  }
+
+  const container=document.getElementById('convert-container');
+  let html='';
+
+  const surplusEntries=Object.entries(surplus).sort((a,b)=>b[1]-a[1]);
+  const freedEntries  =Object.entries(freed).sort((a,b)=>b[1]-a[1]);
+
+  if(!surplusEntries.length && !freedEntries.length){
+    container.innerHTML='<div class="empty">No surplus. Fill your inventory or skip some equipment.</div>';
+    return;
+  }
+
+  function cvRow(k,qty,tag){
+    const [matId,grade]=k.split('_');
+    const mat=MATERIALS[matId];
+    if(!mat) return '';
+    return `<div class="cv-row">
+      ${matImg(mat,26)}
+      <div class="mat-name">${mat.name}<small>${grade}</small></div>
+      <span class="gb gb-${grade}">${grade}</span>
+      <span class="surplus-val">${qty>0?'+':''}${qty.toLocaleString()}</span>
+      <span class="tag">${tag}</span>
+    </div>`;
+  }
+
+  if(surplusEntries.length){
+    html+=`<div class="cv-section">
+      <div class="card-label">Inventory surplus (above active equipment needs)</div>
+      <div class="cv-list">${surplusEntries.map(([k,v])=>cvRow(k,v,'surplus')).join('')}</div>
+    </div>`;
+  }
+  if(freedEntries.length){
+    html+=`<div class="cv-section">
+      <div class="card-label">From skipped equipment</div>
+      <div class="cv-list">${freedEntries.map(([k,v])=>cvRow(k,v,'from skip')).join('')}</div>
+    </div>`;
+  }
+  container.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════
+loadState();
+renderInventory();
+populateWorkshopSelects();
+syncGoldUI();
+</script>
+</body>
+</html>
