@@ -102,16 +102,12 @@
   .eq-filters input{flex:1;min-width:140px}
   .eq-list{display:flex;flex-direction:column;gap:6px}
   .eq-row{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .eq-row.skipped{opacity:.4}
   .eq-name{flex:1;font-weight:600;min-width:120px}
   .eq-name small{display:block;color:var(--muted);font-size:11px;font-weight:400;margin-top:1px}
   .type-badge{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
   .type-Blessed{background:#1a2a1a;color:#5ac85a}
   .type-Basic  {background:#2a2a1a;color:#a0a040}
   .type-Monster{background:#2a1a1a;color:#c05050}
-  .skip-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:3px 9px;border-radius:5px;cursor:pointer;font-size:12px;white-space:nowrap;transition:all .15s}
-  .skip-btn:hover{background:var(--red);border-color:var(--red);color:#fff}
-  .skip-btn.on{background:var(--red);border-color:var(--red);color:#fff}
   .grade-toggle{cursor:pointer;transition:all .15s;user-select:none;opacity:.45}
   .grade-toggle:hover{opacity:.8}
   .grade-toggle.crafted{opacity:1;box-shadow:0 0 0 1px currentColor}
@@ -199,7 +195,6 @@
         <div style="color:var(--muted)">Browse all equipment. For each item you can:</div>
         <ul style="color:var(--muted);padding-left:18px;margin-top:4px">
           <li>Click a grade badge (White / Green / …) to mark it as <strong style="color:var(--text)">crafted</strong> — this is required by the Checker as a prerequisite for higher grades.</li>
-          <li>Click <strong style="color:var(--text)">Skip</strong> to exclude it from surplus calculations — useful for equipment you don't plan to make.</li>
           <li>Click <strong style="color:var(--text)">Check</strong> to jump straight to the Checker for that item.</li>
         </ul>
       </div>
@@ -216,7 +211,13 @@
 
       <div>
         <div style="font-weight:700;color:var(--text);margin-bottom:4px">♻ Surplus</div>
-        <div style="color:var(--muted)">Shows materials you have more of than your active equipment needs, plus materials freed up from equipment you've marked as Skipped. These are safe to fuse or convert without affecting your crafting goals.</div>
+        <div style="color:var(--muted)">Set the equipment pieces you plan to craft (equipment, grade, and quantity), then see at a glance which materials you have enough of and which you're short on.</div>
+        <ul style="color:var(--muted);padding-left:18px;margin-top:4px">
+          <li>Click <strong style="color:var(--text)">+ Add Target</strong> to add a craft goal.</li>
+          <li>Pick the equipment, target grade, and how many copies you want.</li>
+          <li>The table below shows each required material with its surplus (+) or shortage (−) against your current inventory.</li>
+          <li>No targets set = no calculation shown. Start fresh and add only what you're working toward.</li>
+        </ul>
       </div>
 
       <div style="border-top:1px solid var(--border);padding-top:12px;color:var(--muted);font-size:12px">
@@ -347,11 +348,6 @@
       <option>Top</option>
       <option>Bottom</option>
     </select>
-    <select id="eq-skip-filter" onchange="renderEquipment()">
-      <option value="">All</option>
-      <option value="active">Active only</option>
-      <option value="skipped">Skipped only</option>
-    </select>
   </div>
   <div id="eq-list" class="eq-list"></div>
 </div>
@@ -378,11 +374,7 @@
 
 <!-- ════════════════════════ SURPLUS ════════════════════════ -->
 <div id="page-convert" class="page">
-  <div class="section-header"><h2>Surplus & Convert</h2></div>
-  <div class="convert-note">
-    Materials listed here are either in excess of what your <strong>active</strong> equipment needs,
-    or they come from equipment you have <strong>Skipped</strong>. These are safe to fuse or convert.
-  </div>
+  <div class="section-header"><h2>♻ Surplus</h2></div>
   <div id="convert-container"></div>
 </div>
 
@@ -459,7 +451,7 @@ const EQUIPMENT_DB = [
 // ══════════════════════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════════════════════
-let state = { inventory:{}, skipped:{}, crafted:{}, gold:0 };
+let state = { inventory:{}, crafted:{}, gold:0 };
 
 function invKey(matId, grade){ return matId+'_'+grade; }
 function craftedKey(eqId, grade){ return eqId+'_'+grade; }
@@ -471,6 +463,7 @@ function loadState(){
       if(state.inventory[invKey(mat,g)]==null) state.inventory[invKey(mat,g)]=0;
   if(!state.gold)    state.gold=0;
   if(!state.crafted) state.crafted={};
+  if(!state.targets) state.targets=[];
 }
 function saveState(){ localStorage.setItem('vrforge_v2',JSON.stringify(state)); }
 
@@ -851,15 +844,10 @@ function renderEquipment(){
   const search=document.getElementById('eq-search').value.toLowerCase();
   const typeF =document.getElementById('eq-type-filter').value;
   const slotF =document.getElementById('eq-slot-filter').value;
-  const skipF =document.getElementById('eq-skip-filter').value;
-
   let list=EQUIPMENT_DB.filter(eq=>{
     if(search && !eq.name.toLowerCase().includes(search)) return false;
     if(typeF && eq.type!==typeF) return false;
     if(slotF && eq.slot!==slotF) return false;
-    const sk=!!state.skipped[eq.id];
-    if(skipF==='active'  && sk)  return false;
-    if(skipF==='skipped' && !sk) return false;
     return true;
   });
 
@@ -868,10 +856,8 @@ function renderEquipment(){
   if(!list.length){ document.getElementById('eq-list').innerHTML='<div class="empty">No equipment found.</div>'; return; }
 
   document.getElementById('eq-list').innerHTML=list.map(eq=>{
-    const sk=!!state.skipped[eq.id];
     const isTodo=eq.type!=='Blessed';
-    const grades=GRADES.filter(g=>Object.keys(eq.recipe).length>0);
-    return `<div class="eq-row ${sk?'skipped':''}" id="eq-row-${eq.id}">
+    return `<div class="eq-row" id="eq-row-${eq.id}">
       ${eq.img?`<img src="${eq.img}" class="eq-icon" alt="${eq.name}" />`:'<div class="eq-icon" style="opacity:.2;background:var(--border);border-radius:4px"></div>'}
       <div class="eq-name">${eq.name}<small>${eq.slot}</small></div>
       <span class="type-badge type-${eq.type}">${eq.type}</span>
@@ -882,18 +868,11 @@ function renderEquipment(){
           onclick="toggleCrafted('${eq.id}','${g}',event)"
           title="${c?'Crafted — click to unmark':'Not crafted — click to mark as crafted'}">${c?'✓ ':''}${g}</span>`;
       }).join('')}
-      <button class="skip-btn ${sk?'on':''}" onclick="toggleSkip('${eq.id}',event)">${sk?'✗ Skipped':'Skip'}</button>
       ${!isTodo?`<button class="btn btn-ghost btn-sm" onclick="openChecker('${eq.id}')">Check</button>`:''}
     </div>`;
   }).join('');
 }
 
-function toggleSkip(id,e){
-  e.stopPropagation();
-  state.skipped[id]=!state.skipped[id];
-  if(!state.skipped[id]) delete state.skipped[id];
-  saveState(); renderEquipment();
-}
 function toggleCrafted(eqId,grade,e){
   if(e) e.stopPropagation();
   const k=craftedKey(eqId,grade);
@@ -1280,76 +1259,202 @@ function renderChecker(){
 // ══════════════════════════════════════════════════════════════
 //  SURPLUS PAGE
 // ══════════════════════════════════════════════════════════════
+
+// Returns { tIdx, ownedIdx, startIdx } for a target, accounting for crafted grades.
+function targetChainInfo(t){
+  const tIdx = GRADES.indexOf(t.grade);
+  let ownedIdx = -1;
+  if(t.eqId){
+    for(let i = tIdx - 1; i >= 0; i--){
+      if(state.crafted[craftedKey(t.eqId, GRADES[i])]){ ownedIdx = i; break; }
+    }
+  }
+  return { tIdx, ownedIdx, startIdx: ownedIdx + 1 };
+}
+
+function addTarget(){
+  state.targets.push({ eqId:'', grade:'White', qty:1 });
+  saveState(); renderConvert();
+}
+function removeTarget(idx){
+  state.targets.splice(idx, 1);
+  saveState(); renderConvert();
+}
+function updateTarget(idx, field, val){
+  if(field==='qty') state.targets[idx].qty = Math.max(1, parseInt(val)||1);
+  else state.targets[idx][field] = val;
+  saveState(); renderConvert();
+}
+
 function renderConvert(){
-  // Sum required materials across all grades of all active equipment
-  // key: `${matId}_${grade}` → total needed
-  const required={};
-  for(const eq of EQUIPMENT_DB){
-    if(state.skipped[eq.id]||!Object.keys(eq.recipe).length) continue;
-    for(const grade of GRADES){
-      for(const [matId,qty] of Object.entries(eq.recipe)){
-        const k=invKey(matId,grade);
-        required[k]=(required[k]||0)+qty;
+  const container = document.getElementById('convert-container');
+  const validEqs  = EQUIPMENT_DB.filter(e => Object.keys(e.recipe).length > 0);
+
+  // ── Targets UI ──
+  const targetsHtml = state.targets.map((t, i) => {
+    const eq = EQUIPMENT_DB.find(e => e.id === t.eqId);
+    const imgHtml = eq?.img
+      ? `<img src="${eq.img}" width="28" height="28" style="object-fit:contain;border-radius:3px;flex-shrink:0">`
+      : `<div style="width:28px;height:28px;background:var(--border);border-radius:3px;flex-shrink:0"></div>`;
+
+    // Forge chain hint shown below each target row
+    let chainHint = '';
+    if(t.eqId){
+      const { tIdx, ownedIdx, startIdx } = targetChainInfo(t);
+      if(startIdx > tIdx){
+        chainHint = `<div style="font-size:11px;color:var(--green-c);margin-top:2px">✓ Already owned — no materials needed</div>`;
+      } else {
+        const steps = GRADES.slice(startIdx, tIdx + 1)
+          .map(g => `<span class="gb gb-${g}" style="font-size:10px;padding:1px 5px">${g}</span>`)
+          .join(`<span style="color:var(--muted);margin:0 2px">→</span>`);
+        const fromLabel = ownedIdx >= 0
+          ? `from <span class="gb gb-${GRADES[ownedIdx]}" style="font-size:10px;padding:1px 5px">${GRADES[ownedIdx]}</span>`
+          : 'from scratch';
+        chainHint = `<div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+          Forging ${fromLabel}: ${steps}
+        </div>`;
+      }
+    }
+
+    return `<div class="cv-row" style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        ${imgHtml}
+        <select onchange="updateTarget(${i},'eqId',this.value)"
+          style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px;flex:1;min-width:140px">
+          <option value="">— Equipment —</option>
+          ${validEqs.map(e=>`<option value="${e.id}"${t.eqId===e.id?' selected':''}>${e.name}</option>`).join('')}
+        </select>
+        <select onchange="updateTarget(${i},'grade',this.value)"
+          style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px">
+          ${GRADES.map(g=>`<option value="${g}"${t.grade===g?' selected':''}>${g}</option>`).join('')}
+        </select>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+          <span style="font-size:12px;color:var(--muted)">×</span>
+          <input type="number" min="1" value="${t.qty}"
+            onchange="updateTarget(${i},'qty',this.value)"
+            style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 6px;border-radius:5px;font-size:13px;width:60px;text-align:center" />
+        </div>
+        <button onclick="removeTarget(${i})" class="btn btn-red btn-sm" style="flex-shrink:0">✕</button>
+      </div>
+      ${chainHint}
+    </div>`;
+  }).join('');
+
+  // ── Chain-aware requirements: sum across all forge steps per target ──
+  const required = {};
+  for(const t of state.targets){
+    if(!t.eqId) continue;
+    const eq = EQUIPMENT_DB.find(e => e.id === t.eqId);
+    if(!eq || !Object.keys(eq.recipe).length) continue;
+    const { startIdx, tIdx } = targetChainInfo(t);
+    for(let i = startIdx; i <= tIdx; i++){
+      for(const [matId, need] of Object.entries(eq.recipe)){
+        const k = invKey(matId, GRADES[i]);
+        required[k] = (required[k] || 0) + need * t.qty;
       }
     }
   }
 
-  // Materials locked in skipped equipment (freed up)
-  const freed={};
-  for(const eq of EQUIPMENT_DB){
-    if(!state.skipped[eq.id]||!Object.keys(eq.recipe).length) continue;
+  const hasRequirements = Object.keys(required).length > 0;
+
+  // ── Requirements table ──
+  let shortageCount = 0, exactCount = 0, reqSurplusCount = 0, reqRows = '';
+  if(hasRequirements){
+    const entries = Object.entries(required).map(([k, need]) => {
+      const [matId, grade] = k.split('_');
+      const have = state.inventory[k] || 0;
+      return { matId, grade, need, have, diff: have - need };
+    }).sort((a, b) => a.diff - b.diff);
+
+    reqRows = entries.map(({ matId, grade, need, have, diff }) => {
+      const mat = MATERIALS[matId];
+      if(!mat) return '';
+      if(diff < 0) shortageCount++;
+      else if(diff > 0) reqSurplusCount++;
+      else exactCount++;
+      const pill = diff < 0
+        ? `<span class="pill pill-lack">${diff} short</span>`
+        : diff > 0
+          ? `<span class="pill pill-ok">+${diff} surplus</span>`
+          : `<span class="pill pill-ok">✓ Exact</span>`;
+      return `<tr>
+        <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
+        <td><span class="gb gb-${grade}">${grade}</span></td>
+        <td style="text-align:right">${need}</td>
+        <td style="text-align:right">${have}</td>
+        <td>${pill}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Free materials: in inventory but not needed by any target ──
+  let freeRows = '', freeCount = 0;
+  for(const matId of MAT_IDS){
     for(const grade of GRADES){
-      for(const [matId,qty] of Object.entries(eq.recipe)){
-        const k=invKey(matId,grade);
-        freed[k]=(freed[k]||0)+qty;
-      }
+      const k = invKey(matId, grade);
+      const have = state.inventory[k] || 0;
+      if(have <= 0 || required[k] > 0) continue; // skip empty or already in requirements
+      const mat = MATERIALS[matId];
+      freeCount++;
+      freeRows += `<tr>
+        <td style="white-space:nowrap">${matImg(mat,20)} ${mat.name}</td>
+        <td><span class="gb gb-${grade}">${grade}</span></td>
+        <td style="text-align:right;color:var(--muted)">—</td>
+        <td style="text-align:right">${have}</td>
+        <td><span class="pill pill-ok-fuse">Free</span></td>
+      </tr>`;
     }
   }
 
-  // Surplus = inventory - required
-  const surplus={};
-  for(const [k,have] of Object.entries(state.inventory)){
-    const req=required[k]||0;
-    if(have>req) surplus[k]=have-req;
-  }
-
-  const container=document.getElementById('convert-container');
-  let html='';
-
-  const surplusEntries=Object.entries(surplus).sort((a,b)=>b[1]-a[1]);
-  const freedEntries  =Object.entries(freed).sort((a,b)=>b[1]-a[1]);
-
-  if(!surplusEntries.length && !freedEntries.length){
-    container.innerHTML='<div class="empty">No surplus. Fill your inventory or skip some equipment.</div>';
-    return;
-  }
-
-  function cvRow(k,qty,tag){
-    const [matId,grade]=k.split('_');
-    const mat=MATERIALS[matId];
-    if(!mat) return '';
-    return `<div class="cv-row">
-      ${matImg(mat,26)}
-      <div class="mat-name">${mat.name}<small>${grade}</small></div>
-      <span class="gb gb-${grade}">${grade}</span>
-      <span class="surplus-val">${qty>0?'+':''}${qty.toLocaleString()}</span>
-      <span class="tag">${tag}</span>
-    </div>`;
-  }
-
-  if(surplusEntries.length){
-    html+=`<div class="cv-section">
-      <div class="card-label">Inventory surplus (above active equipment needs)</div>
-      <div class="cv-list">${surplusEntries.map(([k,v])=>cvRow(k,v,'surplus')).join('')}</div>
-    </div>`;
-  }
-  if(freedEntries.length){
-    html+=`<div class="cv-section">
-      <div class="card-label">From skipped equipment</div>
-      <div class="cv-list">${freedEntries.map(([k,v])=>cvRow(k,v,'from skip')).join('')}</div>
-    </div>`;
-  }
-  container.innerHTML=html;
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-header" style="margin-bottom:12px">
+        <div class="card-label">Craft Targets</div>
+        <button class="btn btn-sm" onclick="addTarget()">+ Add Target</button>
+      </div>
+      ${state.targets.length === 0
+        ? `<div style="color:var(--muted);font-size:13px;padding:4px 0">No targets set. Add a target to calculate surplus.</div>`
+        : `<div style="display:flex;flex-direction:column;gap:8px">${targetsHtml}</div>`
+      }
+    </div>
+    ${hasRequirements ? `
+      <div class="summary-bar" style="margin-bottom:14px">
+        ${shortageCount   ? `<div class="sum-chip lack"><strong>${shortageCount}</strong>Shortage</div>`   : ''}
+        ${exactCount      ? `<div class="sum-chip ok"  ><strong>${exactCount}</strong>Exact</div>`         : ''}
+        ${reqSurplusCount ? `<div class="sum-chip ok"  ><strong>${reqSurplusCount}</strong>Surplus</div>`  : ''}
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-label" style="margin-bottom:10px">Material Requirements</div>
+        <table class="mat-table">
+          <thead><tr>
+            <th>Material</th><th>Grade</th>
+            <th style="text-align:right">Required</th>
+            <th style="text-align:right">In Stock</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody>${reqRows}</tbody>
+        </table>
+      </div>`
+    : state.targets.length > 0
+      ? `<div class="empty" style="margin-bottom:16px">Select an equipment on each target row to see requirements.</div>`
+      : ''
+    }
+    ${freeCount ? `
+      <div class="card">
+        <div class="card-label" style="margin-bottom:6px">Free Materials
+          <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px">not needed for any target — safe to fuse or convert</span>
+        </div>
+        <table class="mat-table">
+          <thead><tr>
+            <th>Material</th><th>Grade</th>
+            <th style="text-align:right">Required</th>
+            <th style="text-align:right">In Stock</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody>${freeRows}</tbody>
+        </table>
+      </div>` : ''
+    }`;
 }
 
 // ══════════════════════════════════════════════════════════════
